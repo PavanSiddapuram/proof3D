@@ -1,0 +1,4 @@
+# Fewer-photo study (PRD 6): condition C with 3 input photos.
+name: fewer-photos-3
+seed: 0
+n_input_photos: 3

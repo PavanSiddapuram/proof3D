@@ -1,0 +1,64 @@
+# Proof3D
+
+**Verified 3D products from the photos merchants already have.**
+
+Single-photo 3D generation invents every surface the photo doesn't show, and nothing proves the result matches the real product. Most listings already have 4 to 8 photos from different angles. Proof3D uses them twice: most build the model, and one is held back to *prove* the model is right. It fits a camera to that unseen photo, renders the model from it, and scores the difference.
+
+![Pipeline](docs/pipeline.png)
+
+> **Status: week 1 of 4.** The geometry core (camera fitting, rasterisation, failure regions), the typed pipeline contracts, and the API with its job queue are built and tested. The model-backed stages are not built yet. See [build status](docs/architecture.md#build-status). This README never claims more than that table.
+
+## Quickstart
+
+Requires [uv](https://docs.astral.sh/uv/) and, for the local stack, Docker.
+
+```bash
+git clone https://github.com/PavanSiddapuram/proof3D.git && cd proof3D
+uv sync                 # Python 3.12 workspace, pinned by uv.lock
+uv run pytest           # unit, property and API tests (~1 min on a laptop CPU)
+make up                 # Postgres + API + CPU worker; API docs at http://localhost:8000/docs
+                        # (port taken? PROOF3D_API_PORT=8001 make up)
+```
+
+Try the camera fitter on its own:
+
+```python
+from proof3d_geometry import OrbitPose, fit_camera, orbit_camera, rasterize, rotation_angle_deg
+import trimesh
+
+mesh = trimesh.creation.box(extents=[1.0, 0.4, 0.2])
+truth = orbit_camera(OrbitPose(azimuth_deg=40, elevation_deg=20, distance=3), 160, 120)
+mask = rasterize(mesh.vertices, mesh.faces, truth).mask  # stand-in for a photo mask
+
+fit = fit_camera(mesh.vertices, mesh.faces, mask, view_label="three_quarter_left")
+print(fit.iou, fit.ambiguous, rotation_angle_deg(fit.camera.R, truth.R))
+```
+
+This prints roughly `0.98 False 0.7`: silhouette IoU, no ambiguity, and 0.7° rotation error. A box *is* symmetric, but its identical-silhouette twin is 180° away, outside the search window around the three-quarter-left prior. Search the whole orbit (`view_label="close_up"` or `None`) and the fitter flags `ambiguous=True` instead of silently picking one. When it fits badly it sets `low_iou=True` and the photo is not scored.
+
+## Repository
+
+| Path | What |
+|---|---|
+| [packages/geometry](packages/geometry) | Cameras, CPU rasteriser, camera fitting, failure regions, mesh checks |
+| [packages/pipeline](packages/pipeline) | Stage order, typed results, Pydantic configs, provenance, storage |
+| [services/api](services/api) | FastAPI orchestrator, data model, Postgres-backed queue, worker loop |
+| [services/worker-gpu](services/worker-gpu), [services/worker-cpu](services/worker-cpu) | Stage workers |
+| [apps/web](apps/web), [packages/viewer](packages/viewer), [harness/phone](harness/phone) | Dashboard, viewer, phone runs (planned) |
+| [eval](eval) | Configs, dataset manifest, results, `make report` |
+| [docs](docs) | [PRD](docs/prd.md), [architecture](docs/architecture.md), [ADRs](docs/adr), [standards](docs/engineering-standards.md), [licence register](docs/licence-register.md) |
+
+## Development
+
+```bash
+make setup      # uv sync + pre-commit hooks (ruff, mypy strict, gitleaks)
+make lint typecheck test
+make cov        # >= 80% on packages/geometry and packages/pipeline
+make report     # rebuild results tables from eval/results/
+```
+
+Configuration comes from environment variables only. Copy `.env.example` to `.env`.
+
+## Licence
+
+Code: [MIT](LICENSE). Third-party models have their own terms, tracked in [docs/licence-register.md](docs/licence-register.md); several are unverified, and one (nvdiffrast) is reportedly non-commercial.

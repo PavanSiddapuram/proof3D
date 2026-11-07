@@ -1,0 +1,16 @@
+# Dataset manifest. Photos live in object storage; this file pins them by content hash so
+# every run points at exact inputs (standards 1). Bump `version` whenever anything changes.
+version: 2026-11-07.0
+products:
+  - id: mug-01
+    category: kitchen
+    store_url: https://YOUR-DEMO-STORE.myshopify.com/products/mug-01
+    photos:
+      - { view: front,               key: photos/<sha256>.jpg }
+      - { view: back,                key: photos/<sha256>.jpg }
+      - { view: left,                key: photos/<sha256>.jpg }
+      - { view: right,               key: photos/<sha256>.jpg }
+      - { view: three_quarter_left,  key: photos/<sha256>.jpg }
+      - { view: three_quarter_right, key: photos/<sha256>.jpg }
+      - { view: top,                 key: photos/<sha256>.jpg }
+      - { view: close_up,            key: photos/<sha256>.jpg }

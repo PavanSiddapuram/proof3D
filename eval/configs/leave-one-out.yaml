@@ -1,0 +1,5 @@
+# Leave-one-out evaluation (PRD 5.4 step 5): every usable photo is held out in turn.
+name: leave-one-out
+seed: 0
+verify:
+  leave_one_out: true

@@ -1,0 +1,20 @@
+[project]
+name = "proof3d-worker-gpu"
+version = "0.1.0"
+description = "GPU stages: masks, generation, texture projection, camera fit, scoring."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "proof3d-pipeline",
+    "proof3d-geometry[gpu]",
+    "proof3d-api",
+]
+# Model packages (BiRefNet, Hunyuan3D-2mv, TRELLIS.2, lpips, DINOv2, flip) are installed in the
+# GPU image only, pinned in infra/worker-gpu.Dockerfile, after their licences are recorded in
+# docs/licence-register.md.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/proof3d_worker_gpu"]

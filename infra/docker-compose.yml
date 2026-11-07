@@ -1,0 +1,36 @@
+# Local stack: everything except the GPU worker (standards 5, Local setup).
+services:
+  db:
+    image: postgres:16.4
+    environment:
+      POSTGRES_USER: proof3d
+      POSTGRES_PASSWORD: proof3d
+      POSTGRES_DB: proof3d
+    # No host port: services reach it as db:5432, and a local Postgres often holds 5432.
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proof3d"]
+      interval: 2s
+      retries: 30
+
+  api:
+    build: { context: .., dockerfile: infra/api.Dockerfile }
+    environment:
+      PROOF3D_DATABASE_URL: postgresql+psycopg://proof3d:proof3d@db:5432/proof3d
+      PROOF3D_STORAGE_ROOT: /data/storage
+    ports: ["${PROOF3D_API_PORT:-8000}:8000"]
+    volumes: [storage:/data/storage]
+    depends_on: { db: { condition: service_healthy } }
+
+  worker-cpu:
+    build: { context: .., dockerfile: infra/api.Dockerfile }
+    command: ["python", "-m", "proof3d_worker_cpu"]
+    environment:
+      PROOF3D_DATABASE_URL: postgresql+psycopg://proof3d:proof3d@db:5432/proof3d
+      PROOF3D_STORAGE_ROOT: /data/storage
+    volumes: [storage:/data/storage]
+    depends_on: { db: { condition: service_healthy } }
+
+volumes:
+  pgdata:
+  storage:

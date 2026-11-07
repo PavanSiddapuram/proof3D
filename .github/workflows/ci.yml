@@ -1,0 +1,32 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with: { version: "0.11.26", enable-cache: true }
+      - run: uv sync --frozen
+      - name: Lint
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Types (strict on packages/)
+        run: uv run mypy
+      - name: Tests
+        run: uv run pytest
+      - name: Coverage gate (geometry, pipeline >= 80%)
+        run: make cov
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+
+  # Eval regression (standards 4) runs once the GPU stages exist: rescore the 5-product subset
+  # on pipeline changes and fail if any metric drops beyond tolerance.

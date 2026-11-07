@@ -1,0 +1,21 @@
+[project]
+name = "proof3d-geometry"
+version = "0.1.0"
+description = "Camera fitting, silhouette rasterisation, face-ID mapping and mesh checks."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.14",
+    "trimesh>=4.4",
+]
+
+[project.optional-dependencies]
+# GPU backend for rendering and differentiable fitting; installed on the GPU worker only.
+gpu = ["torch>=2.5"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/proof3d_geometry"]

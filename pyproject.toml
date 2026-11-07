@@ -1,0 +1,76 @@
+[project]
+name = "proof3d"
+version = "0.0.0"
+description = "Verified 3D products from the photos merchants already have."
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "packages/pipeline",
+    "packages/geometry",
+    "services/api",
+    "services/worker-cpu",
+    "services/worker-gpu",
+]
+
+[tool.uv.sources]
+proof3d-pipeline = { workspace = true }
+proof3d-geometry = { workspace = true }
+proof3d-api = { workspace = true }
+proof3d-worker-cpu = { workspace = true }
+proof3d-worker-gpu = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "proof3d-pipeline",
+    "proof3d-geometry",
+    "proof3d-api",
+    "proof3d-worker-cpu",
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "hypothesis>=6.112",
+    "httpx>=0.27",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+    "types-PyYAML",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "NPY", "RUF", "PT"]
+# N803/N806: R, H, W, X, Y are the standard names in camera and raster maths.
+ignore = ["N803", "N806"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["proof3d_pipeline", "proof3d_geometry", "proof3d_api", "proof3d_worker_cpu", "proof3d_worker_gpu"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+files = ["packages/pipeline/src", "packages/geometry/src"]
+
+[[tool.mypy.overrides]]
+module = ["trimesh.*", "scipy.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/pipeline/tests",
+    "packages/geometry/tests",
+    "services/api/tests",
+    "services/worker-cpu/tests",
+]
+addopts = "-q --import-mode=importlib"
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
+
+[tool.coverage.report]
+fail_under = 80
