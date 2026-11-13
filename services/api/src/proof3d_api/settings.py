@@ -16,9 +16,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://proof3d:proof3d@localhost:5432/proof3d"
     pipeline_version: str = "0.1.0"
     max_stage_attempts: int = 3
-    # Create tables on startup. Fine until the schema first changes under real data; then
-    # switch to Alembic migrations and turn this off.
-    create_tables: bool = True
+    # Create tables on startup, for throwaway SQLite databases in tests only. Real databases
+    # get their schema from migrations: python -m proof3d_api.migrate
+    create_tables: bool = False
+    max_upload_mb: int = 50
     gpu_usd_per_hour: float = 0.0  # set to the rented GPU's price so costs are real, not invented
 
     # "local" for one machine. "s3" whenever a worker runs elsewhere (Modal, Kaggle), so every

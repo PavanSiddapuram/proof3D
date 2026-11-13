@@ -128,7 +128,9 @@ def test_rerun_resets_later_stages(session: Session) -> None:
 def test_compare_returns_latest_version_per_condition(tmp_path: pathlib.Path) -> None:
     url = f"sqlite+pysqlite:///{tmp_path / 'db.sqlite'}"
     with TestClient(create_app(Settings(database_url=url), create_tables=True)) as client:
-        r = client.post("/products/import", json={"photos": ["a.jpg", "b.jpg"]}).json()
+        r = client.post(
+            "/products/import", json={"photos": ["s3://demo/a.jpg", "s3://demo/b.jpg"]}
+        ).json()
         with make_sessionmaker(make_engine(url))() as s, s.begin():
             for method, glb in [("A", "a1.glb"), ("C", "c1.glb"), ("C", "c2.glb")]:
                 s.add(AssetVersion(job_id=r["job_id"], method=method, glb_key=glb))

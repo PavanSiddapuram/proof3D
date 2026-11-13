@@ -84,3 +84,13 @@ def test_measure_records_time_and_gpu() -> None:
     assert metrics.wall_s > 0
     assert metrics.gpu_s == metrics.wall_s
     assert metrics.cost_usd == 0.01
+
+
+def test_measure_records_peak_memory_held_at_the_end() -> None:
+    with measure() as baseline:
+        pass
+    with measure() as m:
+        blob = b"" * (64 * 2**20)  # written, so the pages are resident
+    assert len(blob) == 64 * 2**20
+    assert m.peak_mem_mb >= baseline.peak_mem_mb + 48
+    assert m.gpu_s == 0.0

@@ -137,6 +137,7 @@ def test_run_worker_drain_uses_settings(
     settings = Settings(
         database_url=f"sqlite+pysqlite:///{tmp_path / 'q.sqlite'}",
         storage_root=str(tmp_path / "store"),
+        create_tables=True,
         _env_file=None,  # type: ignore[call-arg]
     )
     ran = run_worker(WorkerKind.GPU, {StageName.INGEST: _ok}, ["--drain"], settings)

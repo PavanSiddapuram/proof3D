@@ -55,6 +55,30 @@ Result: DISAGREES with held-out left.png, top.png
 
 The correct model scores 0.98 or higher on all three photos. For it, the check also reports that 47.9% of the surface appears in no photo, and suggests the right side as the next photo (+25.9%). Only silhouettes are scored so far; appearance metrics need the GPU worker.
 
+### Run it end to end
+
+The same check runs as pipeline stages: upload, import, ingest, verify, scorecard. It goes through the API, the Postgres queue and storage. With Postgres running and `PROOF3D_DATABASE_URL` set in `.env`:
+
+```bash
+uv run python -m proof3d_api.migrate                    # create or upgrade the schema
+uv run uvicorn proof3d_api.main:create_app --factory    # terminal 1: the API
+uv run python eval/scripts/demo_verify.py --wrong       # terminal 2: upload, import, verify
+```
+
+The demo builds a synthetic product, uploads three photos and a model with `POST /uploads`, imports the model with left and top held out, and runs the GPU worker's queue in-process. Ingest and verify run on CPU today. It then prints the job and the scorecard from the API. With `--wrong`, the model's depth is wrong:
+
+```
+  ingest           succeeded     0.1 s
+  verify           succeeded    29.0 s
+  optimize         queued
+Verdict: disagrees
+  held-out left.png: silhouette IoU 0.552  DISAGREES
+  held-out top.png: silhouette IoU 0.674  DISAGREES
+  input    front.png: silhouette IoU 0.905
+```
+
+Without `--wrong`, the verdict is `silhouette_agrees`, with held-out IoUs of 0.963 and 0.994. The job then waits at `optimize`, which is not built yet. To run the worker separately, use `--no-worker`, then run `PYTHONPATH=services/worker-gpu/src uv run python -m proof3d_worker_gpu --drain`.
+
 ## Repository
 
 | Path | What |
@@ -73,6 +97,10 @@ The correct model scores 0.98 or higher on all three photos. For it, the check a
 make setup      # uv sync + pre-commit hooks (ruff, mypy strict, gitleaks)
 make lint typecheck test
 make cov        # >= 80% on packages/geometry and packages/pipeline
+make migrate    # create or upgrade the database schema (Alembic)
+make api        # the API on :8000
+make demo       # upload, import and verify a synthetic model through the API
+make worker-gpu-local  # run queued GPU-worker stages here, then exit
 make gpu-drain  # process queued GPU stages on Modal, then exit (docs/gpu.md)
 make report     # rebuild results tables from eval/results/
 ```

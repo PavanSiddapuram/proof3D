@@ -28,3 +28,8 @@ Generating 3D is no longer what sets Proof3D apart. Checking each product agains
 - **The importer declares which photos were held out, and Proof3D trusts that.** A wrong declaration turns a consistency check into a false accuracy claim. The provenance records who made the model, so the claim can be traced.
 - **An imported model's front may not face +z.** Pass no view labels (or `--no-priors`), so the camera search covers the whole orbit.
 - **The `planned_skip` column is new.** With `create_tables`, existing development databases need recreating. This is the trigger, already noted in settings, to move to Alembic before real data accumulates.
+
+## Update, 2026-11-13
+- **Repair is also skipped for an imported model.** Proof3D verifies someone else's model; it does not modify it, consistent with decision 2. An imported job runs ingest, then verify, then the CPU stages. If merchants turn out to want Proof3D to fix imported models, remove `repair` from the import's skip set.
+- **Decision 3 is built.** The verify stage stores the checkable, evidenced and invented shares, the next photos and a verdict on the scorecard. Verify runs `check_model` in the GPU worker, and in its silhouette form it needs no GPU.
+- **Schema changes now go through Alembic** (`python -m proof3d_api.migrate`). `create_tables` is off by default and is used only for throwaway SQLite databases in tests. Baseline revision `0001` already includes `planned_skip` and the new `asset_versions.evidence` column. A development database created earlier by `create_tables` must be recreated once. After that, migrations carry the data forward.

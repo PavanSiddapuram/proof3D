@@ -38,6 +38,7 @@ dev = [
     "mypy>=1.13",
     "pre-commit>=4.0",
     "types-PyYAML",
+    "types-psutil",
     "pillow>=11.0",  # eval/scripts/check_model.py reads background-removed PNGs
 ]
 
@@ -57,7 +58,14 @@ known-first-party = ["proof3d_pipeline", "proof3d_geometry", "proof3d_api", "pro
 strict = true
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
-files = ["packages/pipeline/src", "packages/geometry/src"]
+files = [
+    "packages/pipeline/src",
+    "packages/geometry/src",
+    "services/api/src",
+    "services/worker-cpu/src",
+    "services/worker-gpu/src",
+]
+mypy_path = "services/worker-gpu/src"
 
 [[tool.mypy.overrides]]
 module = ["trimesh.*", "scipy.*", "boto3.*", "botocore.*"]
@@ -69,7 +77,11 @@ testpaths = [
     "packages/geometry/tests",
     "services/api/tests",
     "services/worker-cpu/tests",
+    "services/worker-gpu/tests",
 ]
+# The GPU worker is not installed in the dev environment (it would pull in torch); its stages
+# that run on CPU are tested from source.
+pythonpath = ["services/worker-gpu/src"]
 addopts = "-q --import-mode=importlib"
 filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
 

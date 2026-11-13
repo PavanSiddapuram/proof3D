@@ -10,7 +10,9 @@ product's photos with their masks. For each photo it fits a camera. It then repo
   the main finding when present, not a fitting failure to hide;
 * surface shares: shown by a held-out photo that fits (checkable), shown by any photo that
   fits (evidenced), and shown by none (invented);
-* the next photos to take, to shrink the invented share.
+* the next photos to take, to shrink the invented share. None while a held-out photo
+  disagrees: the model (or that photo's mask) needs fixing first, and a suggestion could name
+  a view the merchant already has, the one that disagrees.
 
 Appearance scores (LPIPS, DINOv2, FLIP) need the GPU worker and are not part of this yet,
 so the only accuracy number here is the held-out silhouette IoU.
@@ -137,9 +139,9 @@ def check_model(
         checkable_share=evidence.share(held_rows),
         evidenced_share=evidenced,
         invented_share=1.0 - evidenced,
-        suggestions=suggest_views(
-            v, f, evidence.seen_by(), count=suggestions, settings=evidence_settings
-        ),
+        suggestions=[]
+        if disagreements
+        else suggest_views(v, f, evidence.seen_by(), count=suggestions, settings=evidence_settings),
         faces_used=len(f),
         held_out_disagreements=[p.name for p in disagreements],
         notes=notes,

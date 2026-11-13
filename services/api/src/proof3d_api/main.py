@@ -4,10 +4,14 @@ No `from __future__ import annotations` here: FastAPI must resolve the locally d
 dependency alias at definition time.
 """
 
+import hashlib
+import re
 from collections.abc import Iterator
-from typing import Annotated, Any
+from pathlib import PurePosixPath
+from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -15,14 +19,17 @@ from proof3d_api import queue
 from proof3d_api.db import AssetVersion, Base, Job, Photo, Product, make_engine, make_sessionmaker
 from proof3d_api.schemas import (
     CompareOut,
+    EvidenceOut,
     ImportRequest,
     ImportResponse,
     JobOut,
     ScorecardOut,
     ScoreOut,
     StageOut,
+    UploadOut,
+    Verdict,
 )
-from proof3d_api.settings import Settings, get_settings
+from proof3d_api.settings import Settings, get_settings, make_storage
 from proof3d_pipeline import (
     Condition,
     PhotoRole,
@@ -31,10 +38,23 @@ from proof3d_pipeline import (
     StageStatus,
     config_hash,
 )
+from proof3d_pipeline.storage import Storage
+
+# Accepted uploads, recognised by their first bytes rather than the name or Content-Type.
+_SIGNATURES: tuple[tuple[bytes, Literal["image", "model"], str], ...] = (
+    (b"\x89PNG\r\n\x1a\n", "image", ".png"),
+    (b"\xff\xd8\xff", "image", ".jpg"),
+    (b"glTF", "model", ".glb"),
+)
 
 
-def create_app(settings: Settings | None = None, create_tables: bool | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    create_tables: bool | None = None,
+    storage: Storage | None = None,
+) -> FastAPI:
     settings = settings or get_settings()
+    store = storage or make_storage(settings)
     engine = make_engine(settings.database_url)
     if settings.create_tables if create_tables is None else create_tables:
         Base.metadata.create_all(engine)
@@ -48,12 +68,44 @@ def create_app(settings: Settings | None = None, create_tables: bool | None = No
 
     DB = Annotated[Session, Depends(db)]
 
+    @app.post("/uploads", response_model=UploadOut, status_code=201)
+    async def upload(
+        request: Request, filename: Annotated[str, Query(min_length=1, max_length=128)]
+    ) -> UploadOut:
+        """Store a photo (PNG, JPEG) or model (GLB) sent as the raw request body. The key is
+        content-addressed, so uploading the same file twice gives the same key."""
+        limit = settings.max_upload_mb * 2**20
+        too_large = HTTPException(413, f"uploads are limited to {settings.max_upload_mb} MB")
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > limit:
+            raise too_large
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > limit:
+                raise too_large
+            chunks.append(chunk)
+        data = b"".join(chunks)
+        match = next((s for s in _SIGNATURES if data.startswith(s[0])), None)
+        if match is None:
+            raise HTTPException(415, "only PNG, JPEG and GLB files are accepted")
+        _, kind, suffix = match
+        key = f"uploads/{hashlib.sha256(data).hexdigest()}/{_safe_name(filename, suffix)}"
+        await run_in_threadpool(store.put, key, data)
+        return UploadOut(key=key, bytes=size, kind=kind)
+
     @app.post("/products/import", response_model=ImportResponse, status_code=201)
     def import_product(req: ImportRequest, session: DB) -> ImportResponse:
         try:
             cfg = PipelineConfig.model_validate(req.config)
         except ValueError as exc:
             raise HTTPException(422, f"invalid pipeline config: {exc}") from exc
+        # URLs are fetched by ingest; storage keys must already be uploaded.
+        files = [*req.photos, *([req.model.glb] if req.model else [])]
+        missing = [k for k in files if "://" not in k and not _stored(store, k)]
+        if missing:
+            raise HTTPException(422, f"not in storage (upload with POST /uploads): {missing}")
         product = Product(
             source_url=str(req.source_url) if req.source_url else None,
             title=req.title,
@@ -78,8 +130,12 @@ def create_app(settings: Settings | None = None, create_tables: bool | None = No
             config=cfg.model_dump(mode="json"),
             config_hash=config_hash(cfg),
         )
-        # An imported model is verified as it is: no generation, no retexturing.
-        skip = {StageName.GENERATE_SHAPE, StageName.PROJECT_TEXTURE} if external else set()
+        # An imported model is verified as it is: no generation, retexturing or repair.
+        skip = (
+            {StageName.GENERATE_SHAPE, StageName.PROJECT_TEXTURE, StageName.REPAIR}
+            if external
+            else set()
+        )
         queue.create_stage_runs(job, skip=skip)
         session.add_all([product, job])
         session.flush()
@@ -189,13 +245,44 @@ def _job_out(job: Job) -> JobOut:
     )
 
 
+def _safe_name(filename: str, suffix: str) -> str:
+    """A storage-safe file name carrying the extension of the detected type."""
+    stem = PurePosixPath(filename.replace("\\", "/")).stem
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._")[:80]
+    return f"{stem or 'upload'}{suffix}"
+
+
+def _stored(store: Storage, key: str) -> bool:
+    try:
+        return store.exists(key)
+    except ValueError:  # malformed, or escapes the storage root
+        return False
+
+
+def _verdict(asset: AssetVersion) -> Verdict | None:
+    if asset.evidence is None:
+        return None
+    if not asset.scores:
+        return "not_checkable"
+    if any(s.passed is False for s in asset.scores):
+        return "disagrees"
+    return "silhouette_agrees"
+
+
 def _scorecard(asset: AssetVersion) -> ScorecardOut:
     return ScorecardOut(
         asset_id=asset.id,
         method=asset.method,
+        verdict=_verdict(asset),
         unverified_surface_share=asset.unverified_surface_share,
+        evidence=EvidenceOut.model_validate(asset.evidence) if asset.evidence else None,
         triangles=asset.triangles,
         bytes=asset.bytes,
-        scores=[ScoreOut.model_validate(s) for s in asset.scores],
+        scores=[
+            ScoreOut.model_validate(s).model_copy(
+                update={"photo_name": PurePosixPath(s.photo.source).name}
+            )
+            for s in asset.scores
+        ],
         provenance=asset.provenance,
     )

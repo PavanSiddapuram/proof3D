@@ -18,7 +18,7 @@ from proof3d_pipeline import StageMetrics, StageName, StageResult, StageStatus, 
 
 DB_URL = "sqlite+pysqlite:///:memory:"
 PHOTOS = ["s3://demo/front.jpg", "s3://demo/left.jpg", "s3://demo/back.jpg"]
-SKIPPED = {StageName.GENERATE_SHAPE, StageName.PROJECT_TEXTURE}
+SKIPPED = {StageName.GENERATE_SHAPE, StageName.PROJECT_TEXTURE, StageName.REPAIR}
 
 
 @pytest.fixture
@@ -66,6 +66,7 @@ def test_import_registers_the_model_and_skips_generation(client: TestClient) -> 
     assert stages["generate_shape"] == "skipped"
     assert stages["project_texture"] == "skipped"
     assert stages["verify"] == "pending"
+    assert stages["repair"] == "skipped"  # someone else's model is verified, not modified
 
     card = client.get(f"/assets/{body['asset_id']}/scorecard").json()
     assert card["method"] == "external"
@@ -116,7 +117,7 @@ def test_queue_jumps_over_skipped_stages(session: Session) -> None:
     while (run := queue.claim(session, WorkerKind.GPU)) is not None:
         ran.append(run.stage)
         queue.complete(session, run, _ok(StageName(run.stage)))
-    assert ran == ["ingest", "verify", "repair"]
+    assert ran == ["ingest", "verify"]
     status = {s.stage: s.status for s in job.stages}
     assert status["generate_shape"] == "skipped"
     assert status["optimize"] == "queued"

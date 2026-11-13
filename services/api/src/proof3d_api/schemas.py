@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
@@ -50,6 +50,12 @@ class ImportRequest(BaseModel):
         return self
 
 
+class UploadOut(BaseModel):
+    key: str = Field(description="Storage key; pass it in `photos` or `model.glb` on import")
+    bytes: int
+    kind: Literal["image", "model"]
+
+
 class ImportResponse(BaseModel):
     job_id: str
     product_id: str
@@ -90,6 +96,7 @@ class ScoreOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     photo_id: str
+    photo_name: str | None = None
     fit_iou: float
     fit_ambiguous: bool
     metrics: dict[str, Any]
@@ -98,10 +105,53 @@ class ScoreOut(BaseModel):
     render_keys: dict[str, Any]
 
 
+class NextPhotoOut(BaseModel):
+    view: str = Field(description="front, back, left, right, three_quarter_*, top, underside")
+    azimuth_deg: float
+    elevation_deg: float
+    gain: float = Field(description="Share of the surface this photo would newly show")
+    covered_after: float = Field(description="Share shown by some photo once it is taken")
+
+
+class InputFitOut(BaseModel):
+    photo_id: str
+    name: str
+    fit_iou: float
+    low_iou: bool
+    ambiguous: bool
+    surface_shown: float
+
+
+class EvidenceOut(BaseModel):
+    """Which parts of the surface any photo shows (ADR 0007)."""
+
+    checkable_share: float = Field(description="Shown by a held-out photo: the score covers it")
+    evidenced_share: float = Field(description="Shown by any photo, input or held-out")
+    invented_share: float = Field(description="Shown by no photo: the generator guessed it")
+    faces_checked: int
+    next_photos: list[NextPhotoOut]
+    input_fits: list[InputFitOut] = Field(
+        description="How well the model matches the photos it was built from (consistency only)"
+    )
+    notes: list[str]
+    report_key: str
+
+
+Verdict = Literal["disagrees", "silhouette_agrees", "not_checkable"]
+
+
 class ScorecardOut(BaseModel):
     asset_id: str
     method: str
+    verdict: Verdict | None = Field(
+        description=(
+            "disagrees: a held-out photo's silhouette does not match. silhouette_agrees: every "
+            "held-out silhouette matches; appearance is not scored yet. not_checkable: no "
+            "usable held-out photo. None: not verified yet."
+        )
+    )
     unverified_surface_share: float | None
+    evidence: EvidenceOut | None
     triangles: int | None
     bytes: int | None
     scores: list[ScoreOut]

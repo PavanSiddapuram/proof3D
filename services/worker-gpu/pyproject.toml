@@ -7,6 +7,7 @@ dependencies = [
     "proof3d-pipeline",
     "proof3d-geometry[gpu]",
     "proof3d-api",
+    "pillow>=11.0",  # ingest decodes photos and writes masks
 ]
 # Model packages (BiRefNet, Hunyuan3D-2mv, TRELLIS.2, lpips, DINOv2, flip) are installed in the
 # GPU image only, pinned in infra/worker-gpu.Dockerfile, after their licences are recorded in

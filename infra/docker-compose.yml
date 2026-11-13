@@ -13,6 +13,14 @@ services:
       interval: 2s
       retries: 30
 
+  # Brings the schema up to date, then exits; the API and workers wait for it.
+  migrate:
+    build: { context: .., dockerfile: infra/api.Dockerfile }
+    command: ["python", "-m", "proof3d_api.migrate"]
+    environment:
+      PROOF3D_DATABASE_URL: postgresql+psycopg://proof3d:proof3d@db:5432/proof3d
+    depends_on: { db: { condition: service_healthy } }
+
   api:
     build: { context: .., dockerfile: infra/api.Dockerfile }
     environment:
@@ -20,7 +28,7 @@ services:
       PROOF3D_STORAGE_ROOT: /data/storage
     ports: ["${PROOF3D_API_PORT:-8000}:8000"]
     volumes: [storage:/data/storage]
-    depends_on: { db: { condition: service_healthy } }
+    depends_on: { migrate: { condition: service_completed_successfully } }
 
   worker-cpu:
     build: { context: .., dockerfile: infra/api.Dockerfile }
@@ -29,7 +37,7 @@ services:
       PROOF3D_DATABASE_URL: postgresql+psycopg://proof3d:proof3d@db:5432/proof3d
       PROOF3D_STORAGE_ROOT: /data/storage
     volumes: [storage:/data/storage]
-    depends_on: { db: { condition: service_healthy } }
+    depends_on: { migrate: { condition: service_completed_successfully } }
 
 volumes:
   pgdata:

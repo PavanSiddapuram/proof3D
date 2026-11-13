@@ -67,6 +67,7 @@ def test_bad_fits_are_left_out_and_reported(tripod: trimesh.Trimesh) -> None:
     assert report.evidenced_share == 0.0
     assert report.faces_used <= 40
     assert report.held_out_disagreements == ["odd.png"]
+    assert report.suggestions == []  # fix the model or mask first; more photos will not help
     notes = " ".join(report.notes)
     assert "disagrees with held-out photo(s) it never saw: odd.png" in notes
     assert "decimated from 48" in notes

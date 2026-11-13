@@ -104,6 +104,9 @@ class AssetVersion(Base):
     triangles: Mapped[int | None]
     bytes: Mapped[int | None]
     unverified_surface_share: Mapped[float | None]
+    # Written by verify: checkable / evidenced / invented shares, next photos to take, input
+    # photo fits and notes (ADR 0007). None until the asset has been verified.
+    evidence: Mapped[dict[str, Any] | None]
     provenance: Mapped[dict[str, Any]] = mapped_column(default=dict)
     created_at: Mapped[datetime] = mapped_column(default=_now)
     scores: Mapped[list[Score]] = relationship(back_populates="asset")
@@ -117,10 +120,13 @@ class Score(Base):
     fit_iou: Mapped[float]
     fit_ambiguous: Mapped[bool]
     metrics: Mapped[dict[str, Any]]  # name -> value; only metrics actually computed
-    passed: Mapped[bool | None]  # None when the fit was not trusted enough to score
+    # False when the held-out photo disagrees; None while it cannot pass: today, because only
+    # silhouettes are scored and appearance needs the GPU path.
+    passed: Mapped[bool | None]
     failing_regions: Mapped[list[Any]] = mapped_column(default=list)
     render_keys: Mapped[dict[str, Any]] = mapped_column(default=dict)
     asset: Mapped[AssetVersion] = relationship(back_populates="scores")
+    photo: Mapped[Photo] = relationship()
 
 
 class RepairAction(Base):

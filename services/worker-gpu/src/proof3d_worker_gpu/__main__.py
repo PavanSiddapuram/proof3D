@@ -4,7 +4,8 @@
 Stages owned here (PRD 4.1): ingest (BiRefNet masks, view labels), generate_shape
 (Hunyuan3D-2mv and the TRELLIS.2 single-photo baseline), project_texture, verify (camera fit
 via proof3d_geometry + nvdiffrast, LPIPS / DINOv2 / FLIP) and the repair controller.
-Handlers are registered as they are built; see docs/architecture.md#build-status.
+Handlers are registered as they are built; see docs/architecture.md#build-status. Ingest and
+verify are registered in their CPU form: masks from photo transparency, silhouette scoring.
 """
 
 from __future__ import annotations
@@ -13,8 +14,10 @@ import logging
 
 from proof3d_api.worker import Handler, run_worker
 from proof3d_pipeline import StageName, WorkerKind
+from proof3d_worker_gpu.ingest import ingest
+from proof3d_worker_gpu.verify import verify
 
-HANDLERS: dict[StageName, Handler] = {}
+HANDLERS: dict[StageName, Handler] = {StageName.INGEST: ingest, StageName.VERIFY: verify}
 
 
 def main() -> None:  # pragma: no cover

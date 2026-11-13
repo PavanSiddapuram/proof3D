@@ -46,13 +46,15 @@ The table tracks what exists, so nobody reads a stage name as a working stage. A
 | Model check on CPU: camera fits, held-out disagreements, evidence, suggestions | Built, tested; CLI `eval/scripts/check_model.py` | `packages/geometry/check.py` |
 | Import an existing model to verify (`model` on `POST /products/import`) | Built, tested; skips generation and texturing (ADR 0007) | `services/api` |
 | Mesh normalisation and checks | Built, tested | `packages/geometry/mesh.py` |
-| Data model, API endpoints, Postgres queue, rerun | Built; unit-tested on SQLite, smoke-tested on Postgres 16 via Docker Compose | `services/api` |
+| Data model, API endpoints, uploads (`POST /uploads`), Postgres queue, rerun, Alembic migrations | Built; unit-tested on SQLite, run end to end on Postgres 16.4 | `services/api` |
 | Worker loop (claim, run, retry, user-facing errors, `--drain`) | Built, tested | `services/api/.../worker.py` |
 | S3-compatible storage | Built, tested against a fake client; not yet run against a real bucket | `packages/pipeline/storage.py` |
 | Modal app for the GPU worker | Loads and builds its image definition locally; not yet run on a Modal account | `services/worker-gpu/modal_app.py` |
-| Ingest (BiRefNet masks, view labels, hold-out choice) | Not built | week 1 |
+| Ingest, CPU part: masks from photo transparency, quality flags, rejection reasons, hold-out choice | Built, tested; run end to end on Postgres | `services/worker-gpu/.../ingest.py` |
+| Ingest, model part: BiRefNet masks for opaque photos, view labels, fetching photos from URLs | Not built | week 1 |
 | Shape generation A (TRELLIS.2) and B (Hunyuan3D-2mv) | Not built | week 1 |
-| Verify: render + LPIPS / DINOv2 / FLIP / edges | Not built | week 2 |
+| Verify, silhouette part: camera fits, held-out silhouette IoU, surface evidence, next photos, scores and scorecard verdict | Built, tested; run end to end on Postgres (`eval/scripts/demo_verify.py`) | `services/worker-gpu/.../verify.py` |
+| Verify, appearance part: render + LPIPS / DINOv2 / FLIP / edges | Not built | week 2 |
 | nvdiffrast backend for the rasteriser and fitter | Not built | week 2 |
 | Texture projection (C) | Not built | week 3 |
 | Repair rungs 1-2 (D) | Not built | week 3 |
@@ -107,7 +109,17 @@ Every model gets three shares, by area:
 
 `suggest_views` names the next photo to take: the candidate orbit view that shows the most unseen area, weighted by how head-on it sees it. The default candidates leave out the underside.
 
-A held-out photo the model cannot match (IoU below 0.85) is reported as a **disagreement**, the main finding, not hidden as a failed fit. Silhouette IoU cannot tell a wrong model from a bad mask, so the report names both causes.
+A held-out photo the model cannot match (IoU below 0.85) is reported as a **disagreement**, the main finding, not hidden as a failed fit. Silhouette IoU cannot tell a wrong model from a bad mask, so the report names both causes. While a held-out photo disagrees, no next photo is suggested: the model or the mask needs fixing first, and a suggestion could name the very view that disagrees.
+
+The verify stage stores this on the scorecard (`GET /assets/{id}/scorecard`):
+- `verdict`, one of:
+  - `disagrees`;
+  - `silhouette_agrees`, which says nothing about appearance yet;
+  - `not_checkable`, when no usable held-out photo remains.
+- one score per held-out photo;
+- `evidence`: the three shares, next photos, input-photo fits, notes, and the key of the full JSON report.
+
+A score's `passed` is `False` for a disagreement and `None` otherwise. It is never `True` on silhouette alone.
 
 ## Failure regions (PRD 5.4, step 4)
 
