@@ -8,9 +8,10 @@ from sqlalchemy.orm import sessionmaker
 
 from proof3d_api import queue
 from proof3d_api.db import Base, Job, Product, StageRun, make_engine, make_sessionmaker
-from proof3d_api.worker import StageContext, StageError, run_once
+from proof3d_api.settings import Settings, make_storage
+from proof3d_api.worker import StageContext, StageError, drain, run_once, run_worker
 from proof3d_pipeline import StageMetrics, StageName, StageResult, StageStatus, WorkerKind
-from proof3d_pipeline.storage import LocalStorage
+from proof3d_pipeline.storage import LocalStorage, S3Storage
 
 
 @pytest.fixture
@@ -94,3 +95,65 @@ def test_crash_is_retried_then_fails(
     assert run.status == "failed"
     assert run.attempts == 3
     assert run.error == "The ingest stage crashed; see the job trace."
+
+
+def _ok(ctx: StageContext) -> StageResult:
+    return StageResult(
+        stage=ctx.stage, status=StageStatus.SUCCEEDED, metrics=StageMetrics(wall_s=0.0)
+    )
+
+
+GPU_STAGES = (
+    StageName.INGEST,
+    StageName.GENERATE_SHAPE,
+    StageName.PROJECT_TEXTURE,
+    StageName.VERIFY,
+    StageName.REPAIR,
+)
+
+
+def test_drain_runs_gpu_stages_until_a_cpu_stage_is_next(
+    sessions: sessionmaker[Any], job_id: str, tmp_path: Path
+) -> None:
+    handlers = dict.fromkeys(GPU_STAGES, _ok)
+    ran = drain(sessions, WorkerKind.GPU, handlers, LocalStorage(tmp_path), max_attempts=3)
+    assert ran == len(GPU_STAGES)
+    assert _stage(sessions, job_id, StageName.REPAIR).status == "succeeded"
+    assert _stage(sessions, job_id, StageName.OPTIMIZE).status == "queued"
+    assert drain(sessions, WorkerKind.GPU, handlers, LocalStorage(tmp_path), 3) == 0
+
+
+def test_drain_stops_at_max_stages(
+    sessions: sessionmaker[Any], job_id: str, tmp_path: Path
+) -> None:
+    handlers = dict.fromkeys(GPU_STAGES, _ok)
+    assert drain(sessions, WorkerKind.GPU, handlers, LocalStorage(tmp_path), 3, max_stages=2) == 2
+    assert _stage(sessions, job_id, StageName.PROJECT_TEXTURE).status == "queued"
+
+
+def test_run_worker_drain_uses_settings(
+    job_id: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    settings = Settings(
+        database_url=f"sqlite+pysqlite:///{tmp_path / 'q.sqlite'}",
+        storage_root=str(tmp_path / "store"),
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    ran = run_worker(WorkerKind.GPU, {StageName.INGEST: _ok}, ["--drain"], settings)
+    # Ingest succeeds; generate_shape has no handler, so it is failed (not retried) and the
+    # queue is empty. Both count as processed.
+    assert ran == 2
+    assert "gpu worker processed 2 stage(s)" in capsys.readouterr().out
+
+
+def test_make_storage_backends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    local = make_storage(Settings(storage_root=str(tmp_path), _env_file=None))  # type: ignore[call-arg]
+    assert isinstance(local, LocalStorage)
+    with pytest.raises(ValueError, match="PROOF3D_S3_BUCKET"):
+        make_storage(Settings(storage_backend="s3", _env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
+    s3 = make_storage(
+        Settings(storage_backend="s3", s3_bucket="b", s3_region="auto", _env_file=None)  # type: ignore[call-arg]
+    )
+    assert isinstance(s3, S3Storage)

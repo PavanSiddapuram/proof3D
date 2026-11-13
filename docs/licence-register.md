@@ -16,3 +16,14 @@ Every model, weight, library and dataset Proof3D depends on, with its licence an
 | glTF Transform | Packaging, KTX2 | Reported MIT | KTX-Software (toktx) is Apache-2.0 | to verify |
 | trimesh, numpy, scipy | Geometry | MIT / BSD | | to verify |
 | Product photo dataset | Evaluation | Own photographs | Only products photographed by the owner, in the owner's demo store | OK |
+
+## Compute and storage services
+
+Terms of service, not licences, but they govern where photos and outputs go (ADR 0006).
+
+| Service | Used for | Check before use | Status |
+|---|---|---|---|
+| Modal | GPU runs: TRELLIS.2, scored eval | Data handling and retention for uploaded inputs; free-plan terms | to verify |
+| Kaggle notebooks | GPU development runs | Notebook kept private; terms on uploaded data and outputs | to verify |
+| Hosted Postgres (Neon or Supabase) | Shared job database | Free-tier limits; region | to verify |
+| S3-compatible bucket (Cloudflare R2 or similar) | Photos, meshes, renders | Bucket private; key scoped to one bucket | to verify |

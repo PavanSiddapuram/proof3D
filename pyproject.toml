@@ -59,7 +59,7 @@ plugins = ["pydantic.mypy"]
 files = ["packages/pipeline/src", "packages/geometry/src"]
 
 [[tool.mypy.overrides]]
-module = ["trimesh.*", "scipy.*"]
+module = ["trimesh.*", "scipy.*", "boto3.*", "botocore.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -1,4 +1,5 @@
-"""GPU worker: ``python -m proof3d_worker_gpu``. Runs on the rented 24 GB+ GPU.
+"""GPU worker: ``python -m proof3d_worker_gpu [--drain]``. Runs on Modal, Kaggle or any GPU box
+(ADR 0006, docs/gpu.md). ``--drain`` processes the queue and exits.
 
 Stages owned here (PRD 4.1): ingest (BiRefNet masks, view labels), generate_shape
 (Hunyuan3D-2mv and the TRELLIS.2 single-photo baseline), project_texture, verify (camera fit
@@ -10,29 +11,15 @@ from __future__ import annotations
 
 import logging
 
-from proof3d_api.db import Base, make_engine, make_sessionmaker
-from proof3d_api.settings import get_settings
-from proof3d_api.worker import Handler, serve
+from proof3d_api.worker import Handler, run_worker
 from proof3d_pipeline import StageName, WorkerKind
-from proof3d_pipeline.storage import LocalStorage
 
 HANDLERS: dict[StageName, Handler] = {}
 
 
 def main() -> None:  # pragma: no cover
     logging.basicConfig(level=logging.INFO)
-    settings = get_settings()
-    engine = make_engine(settings.database_url)
-    if settings.create_tables:
-        Base.metadata.create_all(engine)
-    sessions = make_sessionmaker(engine)
-    serve(
-        sessions,
-        WorkerKind.GPU,
-        HANDLERS,
-        LocalStorage(settings.storage_root),
-        settings.max_stage_attempts,
-    )
+    run_worker(WorkerKind.GPU, HANDLERS)
 
 
 if __name__ == "__main__":  # pragma: no cover

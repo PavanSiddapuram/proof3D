@@ -156,6 +156,9 @@ def make_engine(url: str) -> Engine:
             from sqlalchemy.pool import StaticPool
 
             kwargs["poolclass"] = StaticPool
+    else:
+        # Hosted Postgres (Neon, Supabase) drops idle connections; check before each use.
+        kwargs["pool_pre_ping"] = True
     return create_engine(url, **kwargs)
 
 

@@ -54,10 +54,13 @@ This prints roughly `0.98 False 0.7`: silhouette IoU, no ambiguity, and 0.7° ro
 make setup      # uv sync + pre-commit hooks (ruff, mypy strict, gitleaks)
 make lint typecheck test
 make cov        # >= 80% on packages/geometry and packages/pipeline
+make gpu-drain  # process queued GPU stages on Modal, then exit (docs/gpu.md)
 make report     # rebuild results tables from eval/results/
 ```
 
 Configuration comes from environment variables only. Copy `.env.example` to `.env`.
+
+GPU stages run on free tiers: Kaggle for development, Modal for TRELLIS.2 and scored runs ([ADR 0006](docs/adr/0006-gpu-compute.md)). Setup steps are in [docs/gpu.md](docs/gpu.md).
 
 ## Licence
 

@@ -1,4 +1,4 @@
-.PHONY: setup lint typecheck test cov up down api report
+.PHONY: setup lint typecheck test cov up down api gpu-drain report
 
 setup:            ## Install the Python workspace and git hooks
 	uv sync
@@ -25,6 +25,9 @@ down:
 
 api:
 	uv run uvicorn proof3d_api.main:create_app --factory --reload
+
+gpu-drain:        ## Process queued GPU stages on Modal, then exit (docs/gpu.md). ARGS="--max-stages 1"
+	uv run --with modal==1.6.3 modal run services/worker-gpu/modal_app.py $(ARGS)
 
 report:           ## Regenerate every table and chart in the write-up from stored results
 	uv run python eval/scripts/make_report.py

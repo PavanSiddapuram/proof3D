@@ -20,11 +20,14 @@ Requirements live in [prd.md](prd.md); how code is built in [engineering-standar
   │ ingest, generate,    │             │ optimise, publish,   │  │  device runs     │
   │ project, verify,     │             │ repair rungs 1-2     │  └──────────────────┘
   │ repair controller    │             └──────────┬───────────┘
+  │ on Modal or Kaggle   │                        │
   └──────────┬───────────┘                        │
              └──────────────┬─────────────────────┘
                             ▼
                  S3-compatible object storage (content-addressed keys)
 ```
+
+The GPU worker runs on free tiers: Modal for TRELLIS.2 and scored runs, Kaggle for development ([ADR 0006](adr/0006-gpu-compute.md), [gpu.md](gpu.md)). There it runs with `--drain`: it processes every queued GPU stage and exits, so no paid time is spent polling. The database and bucket are hosted, so every process sees the same jobs and files.
 
 Both workers import `packages/pipeline` (typed stage contracts, configs, storage) and `packages/geometry` (cameras, rasterisation, camera fitting, failure regions, mesh checks). The worker loop lives in `proof3d_api.worker` so both workers share claim, retry and recording logic.
 
@@ -41,7 +44,9 @@ The table tracks what exists, so nobody reads a stage name as a working stage. A
 | Failure regions from face-ID + error map | Built, tested | `packages/geometry/regions.py` |
 | Mesh normalisation and checks | Built, tested | `packages/geometry/mesh.py` |
 | Data model, API endpoints, Postgres queue, rerun | Built; unit-tested on SQLite, smoke-tested on Postgres 16 via Docker Compose | `services/api` |
-| Worker loop (claim, run, retry, user-facing errors) | Built, tested | `services/api/.../worker.py` |
+| Worker loop (claim, run, retry, user-facing errors, `--drain`) | Built, tested | `services/api/.../worker.py` |
+| S3-compatible storage | Built, tested against a fake client; not yet run against a real bucket | `packages/pipeline/storage.py` |
+| Modal app for the GPU worker | Loads and builds its image definition locally; not yet run on a Modal account | `services/worker-gpu/modal_app.py` |
 | Ingest (BiRefNet masks, view labels, hold-out choice) | Not built | week 1 |
 | Shape generation A (TRELLIS.2) and B (Hunyuan3D-2mv) | Not built | week 1 |
 | Verify: render + LPIPS / DINOv2 / FLIP / edges | Not built | week 2 |
