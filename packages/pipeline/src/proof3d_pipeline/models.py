@@ -43,6 +43,9 @@ class Condition(StrEnum):
     B_MULTI_GENERATED = "B"
     C_MULTI_PROJECTED = "C"
     D_MULTI_PROJECTED_REPAIRED = "D"
+    # A model made by another generator (VersaAI, Tripo, Rodin, ...) and imported for
+    # verification only. Proof3D scores it; it does not generate or retexture it.
+    EXTERNAL = "external"
 
 
 class _Frozen(BaseModel):

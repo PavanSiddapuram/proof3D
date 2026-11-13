@@ -38,6 +38,7 @@ dev = [
     "mypy>=1.13",
     "pre-commit>=4.0",
     "types-PyYAML",
+    "pillow>=11.0",  # eval/scripts/check_model.py reads background-removed PNGs
 ]
 
 [tool.ruff]

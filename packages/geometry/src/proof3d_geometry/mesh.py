@@ -30,6 +30,41 @@ def normalize(vertices: FloatArray) -> tuple[FloatArray, FloatArray, float]:
     return (v - centre) * scale, centre, scale
 
 
+def cluster_decimate(
+    vertices: FloatArray, faces: NDArray[np.int64], max_faces: int
+) -> tuple[FloatArray, NDArray[np.int64]]:
+    """Shrink a mesh to at most ``max_faces`` faces by snapping vertices to a grid.
+
+    Vertices in the same cell merge at their mean; faces that collapse are dropped. The grid
+    starts at 1/512 of the mesh size and halves until the face count fits, so the result keeps
+    the silhouette to within about one cell. That is enough for camera fitting and surface
+    evidence, which work at a few hundred pixels. It is not for display: it ignores normals,
+    UVs and topology.
+    """
+    if max_faces < 1:
+        raise ValueError("max_faces must be at least 1")
+    v = np.asarray(vertices, dtype=np.float64)
+    f = np.asarray(faces, dtype=np.int64)
+    if len(f) <= max_faces:
+        return v, f
+    lo = v.min(axis=0)
+    extent = float((v.max(axis=0) - lo).max()) or 1.0
+    grid = 512
+    while grid >= 2:
+        cells = np.floor((v - lo) / extent * (grid - 1e-9)).astype(np.int64)
+        _, cluster, counts = np.unique(cells, axis=0, return_inverse=True, return_counts=True)
+        cluster = cluster.ravel()
+        nf = cluster[f]
+        keep = (nf[:, 0] != nf[:, 1]) & (nf[:, 1] != nf[:, 2]) & (nf[:, 0] != nf[:, 2])
+        nf = np.unique(np.sort(nf[keep], axis=1), axis=0) if keep.any() else nf[keep]
+        if 0 < len(nf) <= max_faces:
+            centres = np.zeros((len(counts), 3))
+            np.add.at(centres, cluster, v)
+            return centres / counts[:, None], nf
+        grid //= 2
+    raise ValueError(f"cannot decimate below {max_faces} faces")
+
+
 @dataclass(frozen=True)
 class MeshReport:
     n_vertices: int

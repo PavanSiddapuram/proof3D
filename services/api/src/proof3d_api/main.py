@@ -23,7 +23,14 @@ from proof3d_api.schemas import (
     StageOut,
 )
 from proof3d_api.settings import Settings, get_settings
-from proof3d_pipeline import PipelineConfig, StageName, StageStatus, config_hash
+from proof3d_pipeline import (
+    Condition,
+    PhotoRole,
+    PipelineConfig,
+    StageName,
+    StageStatus,
+    config_hash,
+)
 
 
 def create_app(settings: Settings | None = None, create_tables: bool | None = None) -> FastAPI:
@@ -52,17 +59,46 @@ def create_app(settings: Settings | None = None, create_tables: bool | None = No
             title=req.title,
             category=req.category,
         )
-        product.photos = [Photo(source=src) for src in req.photos]
+        external = req.model
+        held_out = set(external.held_out) if external else set()
+        product.photos = [
+            Photo(
+                source=src,
+                # Only the importer knows which photos the generator saw, so roles are set
+                # here; ingest keeps them and only adds masks, labels and quality flags.
+                role=(PhotoRole.HELD_OUT if src in held_out else PhotoRole.INPUT).value
+                if external
+                else None,
+            )
+            for src in req.photos
+        ]
         job = Job(
             product=product,
             pipeline_version=settings.pipeline_version,
             config=cfg.model_dump(mode="json"),
             config_hash=config_hash(cfg),
         )
-        queue.create_stage_runs(job)
+        # An imported model is verified as it is: no generation, no retexturing.
+        skip = {StageName.GENERATE_SHAPE, StageName.PROJECT_TEXTURE} if external else set()
+        queue.create_stage_runs(job, skip=skip)
         session.add_all([product, job])
         session.flush()
-        return ImportResponse(job_id=job.id, product_id=product.id)
+        asset_id = None
+        if external:
+            asset = AssetVersion(
+                job_id=job.id,
+                method=Condition.EXTERNAL.value,
+                glb_key=external.glb,
+                provenance={
+                    "generator": external.generator,
+                    "generator_version": external.generator_version,
+                    "imported": True,
+                },
+            )
+            session.add(asset)
+            session.flush()
+            asset_id = asset.id
+        return ImportResponse(job_id=job.id, product_id=product.id, asset_id=asset_id)
 
     @app.get("/jobs/{job_id}", response_model=JobOut)
     def get_job(job_id: str, session: DB) -> JobOut:

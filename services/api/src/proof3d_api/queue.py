@@ -7,6 +7,7 @@ of the same kind never take the same row. Failures retry up to ``max_attempts``.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -28,10 +29,30 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def create_stage_runs(job: Job) -> None:
+def create_stage_runs(job: Job, skip: Collection[StageName] = ()) -> None:
+    """Create the job's stage chain. Stages in ``skip`` are not part of this job (an imported
+    model has no generation stage) and are passed over when the queue advances."""
     for i, stage in enumerate(STAGE_ORDER):
-        job.stages.append(StageRun(stage=stage.value, position=i, worker=worker_for(stage).value))
-    _queue(job.stages[0])
+        planned = stage in skip
+        run = StageRun(
+            stage=stage.value,
+            position=i,
+            worker=worker_for(stage).value,
+            status=(StageStatus.SKIPPED if planned else StageStatus.PENDING).value,
+            planned_skip=planned,
+        )
+        job.stages.append(run)
+    first = _next_runnable(job, -1)
+    if first is not None:
+        _queue(first)
+
+
+def _next_runnable(job: Job, after: int) -> StageRun | None:
+    later = sorted(
+        (s for s in job.stages if s.position > after and not s.planned_skip),
+        key=lambda s: s.position,
+    )
+    return later[0] if later else None
 
 
 def _queue(run: StageRun) -> None:
@@ -69,7 +90,7 @@ def complete(session: Session, run: StageRun, result: StageResult) -> None:
     run.summary = dict(result.summary)
     run.error = result.error
     if result.status in (StageStatus.SUCCEEDED, StageStatus.SKIPPED):
-        nxt = next((s for s in run.job.stages if s.position == run.position + 1), None)
+        nxt = _next_runnable(run.job, run.position)
         if nxt is not None:
             _queue(nxt)
     session.flush()
@@ -95,18 +116,22 @@ def rerun_from(session: Session, job: Job, stage: StageName) -> None:
     is idempotent and writes to storage (PRD 4.1)."""
     if any(s.status == StageStatus.RUNNING.value for s in job.stages):
         raise RerunConflictError("a stage of this job is still running")
+    first = next(s for s in job.stages if s.stage == stage.value)
+    if first.planned_skip:
+        raise RerunConflictError(f"{stage.value} is not part of this job")
+    earlier = [s for s in job.stages if s.position < first.position]
+    done = {StageStatus.SUCCEEDED.value, StageStatus.SKIPPED.value}
+    if any(s.status not in done for s in earlier):
+        raise RerunConflictError(
+            f"cannot rerun from {stage.value}: an earlier stage has not succeeded"
+        )
+    # Checks first, then changes: a refused rerun leaves the job untouched.
     reset = {s.value for s in stages_from(stage)}
     for run in job.stages:
-        if run.stage in reset:
+        if run.stage in reset and not run.planned_skip:
             run.status = StageStatus.PENDING.value
             run.attempts = 0
             run.error = None
             run.started_at = run.finished_at = run.queued_at = None
-    first = next(s for s in job.stages if s.stage == stage.value)
-    earlier = [s for s in job.stages if s.position < first.position]
-    if any(s.status != StageStatus.SUCCEEDED.value for s in earlier):
-        raise RerunConflictError(
-            f"cannot rerun from {stage.value}: an earlier stage has not succeeded"
-        )
     _queue(first)
     session.flush()

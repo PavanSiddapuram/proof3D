@@ -36,6 +36,25 @@ print(fit.iou, fit.ambiguous, rotation_angle_deg(fit.camera.R, truth.R))
 
 This prints roughly `0.98 False 0.7`: silhouette IoU, no ambiguity, and 0.7° rotation error. A box *is* symmetric, but its identical-silhouette twin is 180° away, outside the search window around the three-quarter-left prior. Search the whole orbit (`view_label="close_up"` or `None`) and the fitter flags `ambiguous=True` instead of silently picking one. When it fits badly it sets `low_iou=True` and the photo is not scored.
 
+### Check a model from any generator
+
+`eval/scripts/check_model.py` checks any GLB, for example a VersaAI, Tripo or Rodin output, against background-removed PNGs of the product. It runs on CPU. Mark the photos the generator never saw with `--held-out`:
+
+```bash
+uv run python eval/scripts/check_model.py model.glb \
+    --photo front.png:front --held-out left.png:left --held-out top.png:top
+```
+
+On a synthetic test: the true product was photographed from the front, left and top, and a model got the depth wrong (an arm pointing at the camera was too long). The model still matches its input photo (IoU 0.904), but the held-out photos expose it:
+
+```
+  held-out left.png    silhouette IoU 0.517  shows  0.0% of surface DISAGREES
+  held-out top.png     silhouette IoU 0.767  shows  0.0% of surface DISAGREES
+Result: DISAGREES with held-out left.png, top.png
+```
+
+The correct model scores 0.98 or higher on all three photos. For it, the check also reports that 47.9% of the surface appears in no photo, and suggests the right side as the next photo (+25.9%). Only silhouettes are scored so far; appearance metrics need the GPU worker.
+
 ## Repository
 
 | Path | What |

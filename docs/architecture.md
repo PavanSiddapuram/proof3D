@@ -42,6 +42,9 @@ The table tracks what exists, so nobody reads a stage name as a working stage. A
 | CPU rasteriser (mask, depth, face-ID) | Built, property-tested against a reference | `packages/geometry/raster.py` |
 | Camera fitting from silhouette | Built, tested on known poses | `packages/geometry/camera_fit.py` |
 | Failure regions from face-ID + error map | Built, tested | `packages/geometry/regions.py` |
+| Surface evidence (checkable / evidenced / invented shares) and next-photo suggestions | Built, tested on synthetic meshes | `packages/geometry/evidence.py` |
+| Model check on CPU: camera fits, held-out disagreements, evidence, suggestions | Built, tested; CLI `eval/scripts/check_model.py` | `packages/geometry/check.py` |
+| Import an existing model to verify (`model` on `POST /products/import`) | Built, tested; skips generation and texturing (ADR 0007) | `services/api` |
 | Mesh normalisation and checks | Built, tested | `packages/geometry/mesh.py` |
 | Data model, API endpoints, Postgres queue, rerun | Built; unit-tested on SQLite, smoke-tested on Postgres 16 via Docker Compose | `services/api` |
 | Worker loop (claim, run, retry, user-facing errors, `--drain`) | Built, tested | `services/api/.../worker.py` |
@@ -84,6 +87,27 @@ The table tracks what exists, so nobody reads a stage name as a working stage. A
 **What the tests establish (synthetic, CPU, 48-face chiral test mesh, 160×120 target, default settings):** four known poses, one from each of front, three-quarter-left, right and back, including off-centre framing and roll, are recovered within 5° of geodesic rotation error. In development runs the errors were 0.8° to 3.6°, at about 7 s per fit on a laptop CPU. A symmetric box is flagged ambiguous, and a target the mesh cannot explain is flagged low-IoU. At 96 px one pose converged 20° off, so 128 px is the default and the documented minimum. **None of this is a result on real photos yet.** Real accuracy comes from the eval on the photographed dataset.
 
 **GPU path.** The worker will minimise the same objective with nvdiffrast's anti-aliased silhouettes, by gradient descent seeded from the same coarse search. The CPU path stays as the reference that CI tests.
+
+## Surface evidence (ADR 0007)
+
+A score only covers the surface some photo shows. `surface_evidence` marks, for each photo with a usable camera fit, the faces that photo shows clearly. A face counts if all three hold:
+- its centroid passes a depth test against the photo's render;
+- it is seen within 75° of head-on;
+- it lands inside the photo's product mask.
+
+The depth test uses centroids, not pixel counts, so faces smaller than a pixel on dense generated meshes still count. On a 20,480-face sphere, the shown share is 0.546 with a 48 px depth buffer and 0.540 from 128 to 512 px.
+
+Every model gets three shares, by area:
+
+| Share | Meaning |
+|---|---|
+| Checkable | Shown by a held-out photo that fits. The held-out score covers this part |
+| Evidenced | Shown by any photo that fits |
+| Invented | Shown by no photo. The generator guessed it |
+
+`suggest_views` names the next photo to take: the candidate orbit view that shows the most unseen area, weighted by how head-on it sees it. The default candidates leave out the underside.
+
+A held-out photo the model cannot match (IoU below 0.85) is reported as a **disagreement**, the main finding, not hidden as a failed fit. Silhouette IoU cannot tell a wrong model from a bad mask, so the report names both causes.
 
 ## Failure regions (PRD 5.4, step 4)
 

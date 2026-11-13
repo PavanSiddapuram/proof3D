@@ -77,6 +77,9 @@ class StageRun(Base):
     worker: Mapped[str] = mapped_column(index=True)
     status: Mapped[str] = mapped_column(default=StageStatus.PENDING.value, index=True)
     attempts: Mapped[int] = mapped_column(default=0)
+    # Skipped when the job was created (e.g. generation for an imported model). A rerun leaves
+    # these skipped; stages a handler skipped at run time are reset like any other.
+    planned_skip: Mapped[bool] = mapped_column(default=False)
     queued_at: Mapped[datetime | None]
     started_at: Mapped[datetime | None]
     finished_at: Mapped[datetime | None]
