@@ -2,6 +2,9 @@
 # in code (standards 3, rule 2). Unknown keys are rejected.
 name: default
 seed: 0
+ingest:
+  segmenter: birefnet-general-lite  # null: accept background-removed photos only
+  mask_threshold: 0.5
 verify:
   camera_fit:
     resolution: 128

@@ -2,7 +2,7 @@
 
 ![Pipeline](pipeline.png)
 
-Requirements live in [prd.md](prd.md); how code is built in [engineering-standards.md](engineering-standards.md); decisions in [adr/](adr/).
+Requirements live in [prd.md](prd.md); how code is built in [engineering-standards.md](engineering-standards.md); decisions in [adr/](adr/); what was built when, and what is next, in [progress.md](progress.md).
 
 ## Components
 
@@ -50,8 +50,9 @@ The table tracks what exists, so nobody reads a stage name as a working stage. A
 | Worker loop (claim, run, retry, user-facing errors, `--drain`) | Built, tested | `services/api/.../worker.py` |
 | S3-compatible storage | Built, tested against a fake client; not yet run against a real bucket | `packages/pipeline/storage.py` |
 | Modal app for the GPU worker | Loads and builds its image definition locally; not yet run on a Modal account | `services/worker-gpu/modal_app.py` |
-| Ingest, CPU part: masks from photo transparency, quality flags, rejection reasons, hold-out choice | Built, tested; run end to end on Postgres | `services/worker-gpu/.../ingest.py` |
-| Ingest, model part: BiRefNet masks for opaque photos, view labels, fetching photos from URLs | Not built | week 1 |
+| Ingest: masks from photo transparency, quality flags, rejection reasons, hold-out choice | Built, tested; run end to end on Postgres | `services/worker-gpu/.../ingest.py` |
+| Ingest, background removal: BiRefNet (small model) through ONNX Runtime for photos without transparency ([ADR 0008](adr/0008-background-removal.md)) | Built, tested; runs on CPU, run end to end on Postgres with synthetic JPEGs; not yet on a GPU or on real photos | `services/worker-gpu/.../segment.py` |
+| Ingest, view labels and fetching photos from URLs | Not built | week 1 |
 | Shape generation A (TRELLIS.2) and B (Hunyuan3D-2mv) | Not built | week 1 |
 | Verify, silhouette part: camera fits, held-out silhouette IoU, surface evidence, next photos, scores and scorecard verdict | Built, tested; run end to end on Postgres (`eval/scripts/demo_verify.py`) | `services/worker-gpu/.../verify.py` |
 | Verify, appearance part: render + LPIPS / DINOv2 / FLIP / edges | Not built | week 2 |

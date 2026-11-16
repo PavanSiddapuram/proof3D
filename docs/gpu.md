@@ -27,7 +27,7 @@ AWS_SECRET_ACCESS_KEY=...
 
 Then create the schema once with `make migrate` (workers and the API never create tables), start the API with `make api`, and import a product, so there is a queued GPU stage to process. `make demo ARGS="--no-worker"` uploads and imports a synthetic one.
 
-Ingest and verify already work in their CPU form: masks come from photo transparency, and only silhouettes are scored. They need no GPU, so `make worker-gpu-local` runs them on your laptop. Modal and Kaggle are needed once generation, rendering and appearance scoring are built.
+Ingest and verify already work in their CPU form: masks come from photo transparency or from BiRefNet ([ADR 0008](adr/0008-background-removal.md)), and only silhouettes are scored. They need no GPU, so `make worker-gpu-local` runs them on your laptop. BiRefNet on a CPU needs about 6 GB of free RAM and 15 s per photo. On Modal it still runs on the CPU until `onnxruntime-gpu` is added to the image. Modal and Kaggle are needed once generation, rendering and appearance scoring are built.
 
 ## 2. Modal: TRELLIS.2 and scored eval runs
 
@@ -108,4 +108,3 @@ for key in [
 | Database, bucket, AWS keys | `.env` | `proof3d` secret | Kaggle secrets |
 | `PROOF3D_GPU_USD_PER_HOUR` | not used | Modal's list price for the GPU | `0` |
 | GPU type | n/a | `PROOF3D_MODAL_GPU`, default `L40S` | T4 |
-

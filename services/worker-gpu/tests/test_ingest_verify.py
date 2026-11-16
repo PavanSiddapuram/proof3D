@@ -10,6 +10,7 @@ import io
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,11 @@ from proof3d_pipeline import StageMetrics, StageName, StageResult, StageStatus, 
 from proof3d_pipeline.storage import LocalStorage
 from proof3d_worker_gpu.__main__ import HANDLERS
 from proof3d_worker_gpu.ingest import ingest, mask_from_image
+from proof3d_worker_gpu.segment import (
+    ModelUnavailableError,
+    Segmenter,
+    SegmenterOutOfMemoryError,
+)
 
 # Fewer, coarser fit evaluations than production, so the suite stays fast.
 CHEAP = {
@@ -43,6 +49,29 @@ CHEAP = {
     }
 }
 VIEWS = {"front.png": (0.0, 10.0), "left.png": (90.0, 10.0), "top.png": (30.0, 60.0)}
+NO_SEGMENTER = {**CHEAP, "ingest": {"segmenter": None}}
+
+
+class FakeSegmenter:
+    """Stands in for BiRefNet: the product is whatever is darker than the light background."""
+
+    name = "fake"
+
+    def __call__(self, image: Image.Image) -> np.ndarray:
+        return (np.asarray(image.convert("L")) < 200).astype(np.float32)
+
+
+def _no_model(name: str) -> Segmenter:
+    raise AssertionError(f"segmenter {name} loaded, but every photo has transparency")
+
+
+def _broken_model(name: str) -> Segmenter:
+    raise ModelUnavailableError("could not download it: offline")
+
+
+# By default, tests fail if the model is loaded; the ones that need it pass FAKE_MODEL.
+NO_MODEL = {**HANDLERS, StageName.INGEST: partial(ingest, load=_no_model)}
+FAKE_MODEL = {**HANDLERS, StageName.INGEST: partial(ingest, load=lambda _: FakeSegmenter())}
 
 
 def png(mask: np.ndarray, background: bool = False) -> bytes:
@@ -79,7 +108,7 @@ class Env:
         return key
 
     def drain(self, handlers: dict[StageName, Handler] | None = None) -> int:
-        return drain(self.sessions, WorkerKind.GPU, handlers or HANDLERS, self.storage, 3)
+        return drain(self.sessions, WorkerKind.GPU, handlers or NO_MODEL, self.storage, 3)
 
     def stages(self, job_id: str) -> dict[str, dict[str, Any]]:
         return {s["stage"]: s for s in self.client.get(f"/jobs/{job_id}").json()["stages"]}
@@ -100,13 +129,17 @@ def product() -> trimesh.Trimesh:
 
 
 def _import_model(
-    env: Env, photos: dict[str, bytes], model: bytes, held_out: list[str]
+    env: Env,
+    photos: dict[str, bytes],
+    model: bytes,
+    held_out: list[str],
+    config: dict[str, Any] = CHEAP,
 ) -> dict[str, Any]:
     keys = {name: env.upload(name, data) for name, data in photos.items()}
     body = {
         "photos": list(keys.values()),
         "title": "Synthetic tripod",
-        "config": CHEAP,
+        "config": config,
         "model": {
             "glb": env.upload("model.glb", model),
             "generator": "test",
@@ -163,24 +196,55 @@ def test_wrong_depth_is_caught_by_held_out_photos(env: Env, product: trimesh.Tri
     assert verify["not_scored_yet"] == ["lpips", "dino", "flip", "edges"]
 
 
-def test_rejected_held_out_photo_leaves_nothing_checkable(
+def test_opaque_photos_go_through_background_removal(env: Env, product: trimesh.Trimesh) -> None:
+    photos = {
+        "front.png": png(photo_mask(product, 0, 10)),
+        "left.jpg": jpeg(photo_mask(product, 90, 10)),  # no transparency
+        "top.png": png(photo_mask(product, 30, 60), background=True),  # alpha hides nothing
+    }
+    ids = _import_model(env, photos, glb(product), ["left.jpg", "top.png"])
+    env.drain(FAKE_MODEL)
+
+    summary = env.stages(ids["job_id"])["ingest"]["summary"]
+    assert summary["masks_from"] == {
+        "front.png": "transparency",
+        "left.jpg": "segmenter: birefnet-general-lite",
+        "top.png": "segmenter: birefnet-general-lite",
+    }
+    assert summary["rejected"] == []
+    card = env.client.get(f"/assets/{ids['asset_id']}/scorecard").json()
+    assert card["verdict"] == "silhouette_agrees"
+    assert all(s["fit_iou"] > 0.9 for s in card["scores"])
+
+
+def test_without_background_removal_opaque_photos_are_rejected(
     env: Env, product: trimesh.Trimesh
 ) -> None:
     photos = {
         "front.png": png(photo_mask(product, 0, 10)),
-        "left.jpg": jpeg(photo_mask(product, 90, 10)),  # no transparency: cannot be masked yet
+        "left.jpg": jpeg(photo_mask(product, 90, 10)),
     }
-    ids = _import_model(env, photos, glb(product), ["left.jpg"])
+    ids = _import_model(env, photos, glb(product), ["left.jpg"], config=NO_SEGMENTER)
     env.drain()
 
     ingest_summary = env.stages(ids["job_id"])["ingest"]["summary"]
     assert ingest_summary["rejected"][0]["photo"] == "left.jpg"
     assert ingest_summary["rejected"][0]["role"] == "held_out"
-    assert "background removal is not built yet" in ingest_summary["rejected"][0]["reasons"][0]
+    assert "background removal is turned off" in ingest_summary["rejected"][0]["reasons"][0]
     card = env.client.get(f"/assets/{ids['asset_id']}/scorecard").json()
     assert card["verdict"] == "not_checkable"
     assert card["evidence"]["checkable_share"] == 0.0
     assert any("No held-out photo" in n for n in card["evidence"]["notes"])
+
+
+def test_unavailable_model_is_retried_then_reported(env: Env, product: trimesh.Trimesh) -> None:
+    key = env.upload("front.jpg", jpeg(photo_mask(product, 0, 10)))
+    job_id = env.client.post("/products/import", json={"photos": [key]}).json()["job_id"]
+    broken = {**HANDLERS, StageName.INGEST: partial(ingest, load=_broken_model)}
+    assert env.drain(broken) == 3  # max_attempts
+    stage = env.stages(job_id)["ingest"]
+    assert stage["status"] == "failed"
+    assert stage["error"].startswith("The background-removal model is unavailable")
 
 
 def test_rerunning_verify_replaces_scores(env: Env, product: trimesh.Trimesh) -> None:
@@ -210,11 +274,37 @@ def test_own_pipeline_import_holds_out_the_last_photo(env: Env, product: trimesh
 
 def test_no_usable_photos_fails_with_reasons(env: Env, product: trimesh.Trimesh) -> None:
     key = env.upload("front.jpg", jpeg(photo_mask(product, 0, 10)))
-    job_id = env.client.post("/products/import", json={"photos": [key]}).json()["job_id"]
+    body = {"photos": [key], "config": NO_SEGMENTER}
+    job_id = env.client.post("/products/import", json=body).json()["job_id"]
     env.drain()
     error = env.stages(job_id)["ingest"]["error"]
     assert error.startswith("No usable photos. front.jpg:")
     assert "upload a background-removed PNG" in error
+
+
+class OutOfMemorySegmenter:
+    name = "oom"
+
+    def __call__(self, image: Image.Image) -> np.ndarray:
+        raise SegmenterOutOfMemoryError("bad allocation")
+
+
+def test_background_removal_out_of_memory_says_so(env: Env, product: trimesh.Trimesh) -> None:
+    key = env.upload("front.jpg", jpeg(photo_mask(product, 0, 10)))
+    job_id = env.client.post("/products/import", json={"photos": [key]}).json()["job_id"]
+    oom = {**HANDLERS, StageName.INGEST: partial(ingest, load=lambda _: OutOfMemorySegmenter())}
+    assert env.drain(oom) == 3  # retried: memory may be free next time
+    error = env.stages(job_id)["ingest"]["error"]
+    assert error.startswith("Background removal ran out of memory on front.jpg.")
+
+
+def test_background_removal_finding_nothing_rejects_the_photo(env: Env) -> None:
+    key = env.upload("empty.jpg", jpeg(np.zeros((60, 80), dtype=bool)))
+    job_id = env.client.post("/products/import", json={"photos": [key]}).json()["job_id"]
+    env.drain(FAKE_MODEL)
+    assert env.stages(job_id)["ingest"]["error"] == (
+        "No usable photos. empty.jpg: no product was found in it"
+    )
 
 
 def test_url_photos_are_not_fetched_yet(env: Env) -> None:
@@ -265,10 +355,10 @@ def test_mask_flags() -> None:
     blank = np.zeros((40, 40), dtype=np.uint8)
     centred = blank.copy()
     centred[10:30, 10:30] = 255
-    mask, flags = mask_from_image(_rgba(centred))
+    mask, flags, source = mask_from_image(_rgba(centred))
     assert mask is not None
     assert mask.sum() == 400
-    assert flags == []
+    assert (flags, source) == ([], "transparency")
 
     cropped = blank.copy()
     cropped[0:20, 10:30] = 255
@@ -283,13 +373,35 @@ def test_mask_flags() -> None:
     speck[2, 2] = 255  # a stray pixel is not a second object
     assert mask_from_image(_rgba(speck))[1] == []
 
-    assert mask_from_image(_rgba(blank)) == (None, ["empty_mask"])
-    assert mask_from_image(_rgba(blank + 255)) == (None, ["needs_background_removal"])
-    assert mask_from_image(b"not an image") == (None, ["unreadable"])
+    assert mask_from_image(_rgba(blank)) == (None, ["empty_mask"], "transparency")
+    assert mask_from_image(_rgba(blank + 255)) == (None, ["needs_background_removal"], None)
+    assert mask_from_image(b"not an image") == (None, ["unreadable"], None)
 
     palette = Image.fromarray(centred // 255, mode="L").convert("P")
     buf = io.BytesIO()
     palette.save(buf, format="PNG", transparency=0)
-    mask, flags = mask_from_image(buf.getvalue())
+    mask, flags, _ = mask_from_image(buf.getvalue())
     assert mask is not None
     assert mask.sum() == 400
+
+
+def test_segmenter_threshold_and_lazy_loading() -> None:
+    soft = np.zeros((40, 40), dtype=np.float32)
+    soft[10:30, 10:30] = 0.7
+    loads: list[str] = []
+
+    def segment() -> Segmenter:
+        loads.append("loaded")
+        return lambda _image: soft  # type: ignore[return-value]
+
+    opaque = jpeg(np.zeros((40, 40), dtype=bool))
+    mask, flags, source = mask_from_image(opaque, segment, threshold=0.5)
+    assert mask is not None
+    assert mask.sum() == 400
+    assert (flags, source) == ([], "segmenter")
+    assert mask_from_image(opaque, segment, threshold=0.8)[:2] == (None, ["empty_mask"])
+
+    cut_out = np.zeros((40, 40), dtype=np.uint8)
+    cut_out[5:20, 5:20] = 255
+    assert mask_from_image(_rgba(cut_out), segment)[2] == "transparency"
+    assert len(loads) == 2  # a photo with transparency never loads the model

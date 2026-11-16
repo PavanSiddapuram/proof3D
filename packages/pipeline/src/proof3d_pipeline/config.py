@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,6 +16,13 @@ class _Cfg(BaseModel):
 
 
 Fraction = Annotated[float, Field(ge=0.0, le=1.0)]
+
+
+class IngestConfig(_Cfg):
+    # Background removal for photos without transparency. None accepts background-removed
+    # photos only and rejects the rest, which needs no model.
+    segmenter: Literal["birefnet-general-lite"] | None = "birefnet-general-lite"
+    mask_threshold: Fraction = Field(default=0.5, description="Product probability cut-off")
 
 
 class CameraFitConfig(_Cfg):
@@ -59,6 +66,7 @@ class PipelineConfig(_Cfg):
     name: str = "default"
     seed: int = 0
     n_input_photos: int | None = Field(default=None, ge=1, description="Fewer-photo study (PRD 6)")
+    ingest: IngestConfig = IngestConfig()
     verify: VerifyConfig = VerifyConfig()
     optimize: OptimizeConfig = OptimizeConfig()
 

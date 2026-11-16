@@ -6,7 +6,7 @@ Every model, weight, library and dataset Proof3D depends on, with its licence an
 |---|---|---|---|---|
 | Hunyuan3D-2mv weights | Condition B shape | Tencent Hunyuan 3D community licence | Check territory exclusions (reported to exclude EU, UK, South Korea) and any user-count limits | to verify |
 | TRELLIS.2 weights | Condition A baseline | Reported MIT | Confirm weights vs code licence separately | to verify |
-| BiRefNet | Background masks | Reported MIT | Check the licence of the specific checkpoint's training data | to verify |
+| BiRefNet (`birefnet-general-lite`: `BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx`, GitHub release v1, SHA-256 `56000243…3333`) | Background masks (ADR 0008) | MIT per the repository and model card; LICENSE text not yet read at a pinned commit | The general model's training mix (DIS5K, DUTS, HRSOD, UHRSD, HRS10K, P3M-10k, human sets) includes datasets with their own terms, some possibly research-only. Check them before any public demo | to verify |
 | DINOv2 | Feature similarity metric | Reported Apache-2.0 | | to verify |
 | LPIPS | Perceptual metric | Reported BSD-2-Clause | The backbone weights (AlexNet/VGG) have their own terms | to verify |
 | NVIDIA FLIP | Pixel metric | Reported BSD-3-Clause | | to verify |
@@ -15,6 +15,7 @@ Every model, weight, library and dataset Proof3D depends on, with its licence an
 | meshoptimizer | Simplification, LODs, compression | Reported MIT | | to verify |
 | glTF Transform | Packaging, KTX2 | Reported MIT | KTX-Software (toktx) is Apache-2.0 | to verify |
 | trimesh, numpy, scipy | Geometry | MIT / BSD | | to verify |
+| ONNX Runtime | Runs BiRefNet | Reported MIT | | to verify |
 | Product photo dataset | Evaluation | Own photographs | Only products photographed by the owner, in the owner's demo store | OK |
 
 ## Compute and storage services

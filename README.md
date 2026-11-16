@@ -6,7 +6,7 @@ Single-photo 3D generation invents every surface the photo doesn't show, and not
 
 ![Pipeline](docs/pipeline.png)
 
-> **Status: week 1 of 4.** The geometry core (camera fitting, rasterisation, failure regions), the typed pipeline contracts, and the API with its job queue are built and tested. The model-backed stages are not built yet. See [build status](docs/architecture.md#build-status). This README never claims more than that table.
+> **Status: week 2 of 4.** Verifying a model from any generator runs end to end: upload, background removal (BiRefNet), camera fitting and held-out silhouette scores, through the API, queue and Postgres. Generation, appearance scoring, texturing and repair are not built yet. See [build status](docs/architecture.md#build-status) and [progress](docs/progress.md). This README never claims more than that table.
 
 ## Quickstart
 
@@ -77,7 +77,9 @@ Verdict: disagrees
   input    front.png: silhouette IoU 0.905
 ```
 
-Without `--wrong`, the verdict is `silhouette_agrees`, with held-out IoUs of 0.963 and 0.994. The job then waits at `optimize`, which is not built yet. To run the worker separately, use `--no-worker`, then run `PYTHONPATH=services/worker-gpu/src uv run python -m proof3d_worker_gpu --drain`.
+Without `--wrong`, the verdict is `silhouette_agrees`, with held-out IoUs of 0.963 and 0.994.
+
+With `--opaque`, the photos are JPEGs of the product on a tabletop, so ingest removes the background with BiRefNet ([ADR 0008](docs/adr/0008-background-removal.md)). The first run downloads the 214 MB model into `.data/models`. On a laptop CPU, each photo takes about 15 s and needs about 6 GB of free RAM. The verdicts match the cut-out PNG run: `silhouette_agrees` (0.941, 0.986), and `disagrees` with `--wrong` (0.547, 0.663). The job then waits at `optimize`, which is not built yet. To run the worker separately, use `--no-worker`, then run `PYTHONPATH=services/worker-gpu/src uv run python -m proof3d_worker_gpu --drain`.
 
 ## Repository
 
@@ -89,7 +91,7 @@ Without `--wrong`, the verdict is `silhouette_agrees`, with held-out IoUs of 0.9
 | [services/worker-gpu](services/worker-gpu), [services/worker-cpu](services/worker-cpu) | Stage workers |
 | [apps/web](apps/web), [packages/viewer](packages/viewer), [harness/phone](harness/phone) | Dashboard, viewer, phone runs (planned) |
 | [eval](eval) | Configs, dataset manifest, results, `make report` |
-| [docs](docs) | [PRD](docs/prd.md), [architecture](docs/architecture.md), [ADRs](docs/adr), [standards](docs/engineering-standards.md), [licence register](docs/licence-register.md) |
+| [docs](docs) | [PRD](docs/prd.md), [architecture](docs/architecture.md), [progress](docs/progress.md), [ADRs](docs/adr), [standards](docs/engineering-standards.md), [licence register](docs/licence-register.md) |
 
 ## Development
 

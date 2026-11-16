@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     # get their schema from migrations: python -m proof3d_api.migrate
     create_tables: bool = False
     max_upload_mb: int = 50
+    # Downloaded model weights, cached here and checked against pinned SHA-256 hashes.
+    model_dir: str = "./.data/models"
     gpu_usd_per_hour: float = 0.0  # set to the rented GPU's price so costs are real, not invented
 
     # "local" for one machine. "s3" whenever a worker runs elsewhere (Modal, Kaggle), so every
