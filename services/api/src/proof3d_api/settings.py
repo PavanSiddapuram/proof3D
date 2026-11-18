@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Downloaded model weights, cached here and checked against pinned SHA-256 hashes.
     model_dir: str = "./.data/models"
     gpu_usd_per_hour: float = 0.0  # set to the rented GPU's price so costs are real, not invented
+    # List price of the generation container's GPU (Modal, PROOF3D_GEN_GPU, default L4).
+    # 0 leaves the generation cost unknown rather than reporting it as free.
+    gen_gpu_usd_per_hour: float = 0.0
 
     # "local" for one machine. "s3" whenever a worker runs elsewhere (Modal, Kaggle), so every
     # process reads and writes the same files (ADR 0006). S3 credentials are the AWS_* variables.

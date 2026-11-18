@@ -6,7 +6,7 @@ Single-photo 3D generation invents every surface the photo doesn't show, and not
 
 ![Pipeline](docs/pipeline.png)
 
-> **Status: week 2 of 4.** Verifying a model from any generator runs end to end: upload, background removal (BiRefNet), camera fitting and held-out silhouette scores, through the API, queue and Postgres. Generation, appearance scoring, texturing and repair are not built yet. See [build status](docs/architecture.md#build-status) and [progress](docs/progress.md). This README never claims more than that table.
+> **Status: week 2 of 4.** Verifying a model from any generator runs end to end: upload, background removal (BiRefNet), camera fitting and held-out silhouette scores, through the API, queue and Postgres. Shape generation for A and B (Hunyuan3D) is built but not yet run on a GPU. Generated and projected texture, appearance scoring and repair are not built yet. See [build status](docs/architecture.md#build-status) and [progress](docs/progress.md). This README never claims more than that table.
 
 ## Quickstart
 
@@ -109,7 +109,7 @@ make report     # rebuild results tables from eval/results/
 
 Configuration comes from environment variables only. Copy `.env.example` to `.env`.
 
-GPU stages run on free tiers: Kaggle for development, Modal for TRELLIS.2 and scored runs ([ADR 0006](docs/adr/0006-gpu-compute.md)). Setup steps are in [docs/gpu.md](docs/gpu.md).
+GPU stages run on free tiers: Kaggle for development, Modal for shape generation (Hunyuan3D, [ADR 0009](docs/adr/0009-generation-containers.md)) and scored runs ([ADR 0006](docs/adr/0006-gpu-compute.md)). Setup steps are in [docs/gpu.md](docs/gpu.md).
 
 ## Licence
 

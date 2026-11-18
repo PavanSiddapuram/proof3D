@@ -27,7 +27,7 @@ Requirements live in [prd.md](prd.md); how code is built in [engineering-standar
                  S3-compatible object storage (content-addressed keys)
 ```
 
-The GPU worker runs on free tiers: Modal for TRELLIS.2 and scored runs, Kaggle for development ([ADR 0006](adr/0006-gpu-compute.md), [gpu.md](gpu.md)). There it runs with `--drain`: it processes every queued GPU stage and exits, so no paid time is spent polling. The database and bucket are hosted, so every process sees the same jobs and files.
+The GPU worker runs on free tiers: Modal for the generation containers and scored runs, Kaggle for development ([ADR 0006](adr/0006-gpu-compute.md), [gpu.md](gpu.md)). There it runs with `--drain`: it processes every queued GPU stage and exits, so no paid time is spent polling. The database and bucket are hosted, so every process sees the same jobs and files.
 
 Both workers import `packages/pipeline` (typed stage contracts, configs, storage) and `packages/geometry` (cameras, rasterisation, camera fitting, failure regions, mesh checks). The worker loop lives in `proof3d_api.worker` so both workers share claim, retry and recording logic.
 
@@ -53,7 +53,8 @@ The table tracks what exists, so nobody reads a stage name as a working stage. A
 | Ingest: masks from photo transparency, quality flags, rejection reasons, hold-out choice | Built, tested; run end to end on Postgres | `services/worker-gpu/.../ingest.py` |
 | Ingest, background removal: BiRefNet (small model) through ONNX Runtime for photos without transparency ([ADR 0008](adr/0008-background-removal.md)) | Built, tested; runs on CPU, run end to end on Postgres with synthetic JPEGs; not yet on a GPU or on real photos | `services/worker-gpu/.../segment.py` |
 | Ingest, view labels and fetching photos from URLs | Not built | week 1 |
-| Shape generation A (TRELLIS.2) and B (Hunyuan3D-2mv) | Not built | week 1 |
+| Shape generation A (Hunyuan3D-2) and B (Hunyuan3D-2mv): stage, view slots from import labels, Modal container ([ADR 0005](adr/0005-generation-models.md), [ADR 0009](adr/0009-generation-containers.md)) | Stage built and tested with a stand-in generator; container written but not yet run on Modal | `services/worker-gpu/.../generate.py`, `services/gen-hunyuan3d` |
+| Generated texture for A and B (Hunyuan3D-Paint) | Not built | week 2 |
 | Verify, silhouette part: camera fits, held-out silhouette IoU, surface evidence, next photos, scores and scorecard verdict | Built, tested; run end to end on Postgres (`eval/scripts/demo_verify.py`) | `services/worker-gpu/.../verify.py` |
 | Verify, appearance part: render + LPIPS / DINOv2 / FLIP / edges | Not built | week 2 |
 | nvdiffrast backend for the rasteriser and fitter | Not built | week 2 |

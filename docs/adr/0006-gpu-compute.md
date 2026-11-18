@@ -26,7 +26,7 @@ Free-tier terms below were read on 2026-11-11 from the sources listed at the end
 
 ## Decision
 1. **Develop on Kaggle.** Use a T4 for ingest, Hunyuan3D-2mv and the scoring code.
-2. **Run TRELLIS.2 and every scored eval run on Modal.** The default GPU is an L40S. Set `PROOF3D_MODAL_GPU` to change it.
+2. **Run TRELLIS.2 and every scored eval run on Modal.** (Update 2026-11-18: TRELLIS.2 is deferred and A uses Hunyuan3D-2, which runs in its own container on an L4; see ADR 0005 and ADR 0009.) The default GPU is an L40S. Set `PROOF3D_MODAL_GPU` to change it.
 3. **Both run the same command,** `python -m proof3d_worker_gpu --drain`. It processes every queued GPU stage and exits, so paid time is never spent polling an empty queue. On Modal it is `make gpu-drain`.
 4. **Shared state goes off the laptop:**
    - a hosted Postgres, for example the Neon or Supabase free tier;

@@ -13,19 +13,20 @@ All numbers here come from **synthetic** products (`proof3d_geometry.synthetic`)
 | 2026-11-13 | `4a41928` | Verify a model from any generator: model import, surface evidence, next-photo suggestions, CPU check CLI ([ADR 0007](adr/0007-verify-any-generator.md)) | Wrong-depth model: held-out IoU 0.52 and 0.77, flagged; correct model ≥ 0.98 |
 | 2026-11-13 | `2c74e64` | Example database URL uses 127.0.0.1 (on Windows, `localhost` hangs against Docker) | — |
 | 2026-11-13 | `776f5f4` | End to end through the API, queue and Postgres: `POST /uploads`, Alembic migrations, ingest and verify in their CPU forms, scorecard verdict and evidence, demo script; stage memory metering made ~3× cheaper | 126 tests, 98% coverage; demo on Postgres 16.4: correct model `silhouette_agrees` (held-out 0.963, 0.994), wrong model `disagrees` (0.552, 0.674) |
+| 2026-11-18 | *uncommitted* | Shape generation for A (Hunyuan3D-2) and B (Hunyuan3D-2mv): the `generate_shape` stage, view labels on import, `conditions` in the config, and a pinned Modal container ([ADR 0005](adr/0005-generation-models.md), [ADR 0009](adr/0009-generation-containers.md)). TRELLIS.2 deferred over gated and non-commercial dependencies | Stage tested end to end with a stand-in generator: the wrong-depth A `disagrees` and the correct B `silhouette_agrees`. The container loads locally; **not yet run on Modal** |
 | 2026-11-16 | `90cd33c` | Background removal: BiRefNet (small model) through ONNX Runtime, pinned by SHA-256, used only for photos without transparency ([ADR 0008](adr/0008-background-removal.md)) | Real model on synthetic tabletop JPEGs: mask IoU 0.990–0.999. JPEG demo on Postgres: correct model `silhouette_agrees` (0.941, 0.986), wrong model `disagrees` (0.547, 0.663). CPU: ~17 s load, 13–19 s and ~6 GB RAM per photo |
 
 ## Next
 
 In order. Each line names what "done" means.
 
-1. **Try real photos.** Run the JPEG path on 2–3 of the owner's own products, including one hard case (glass, shine, or thin parts). Done when the masks and verdicts are recorded here, good or bad.
-2. **Background removal on the GPU.** Add `onnxruntime-gpu` to the GPU image and cache the weights on a Modal volume. Done when one Modal drain masks a product and records GPU time and cost.
-3. **View labels in ingest.** Done when the held-out photo is chosen as the angle the inputs miss, and camera fitting uses the label to narrow its search.
-4. **Shape generation:** TRELLIS.2 (A) and Hunyuan3D-2mv (B), after their licences are checked. Week 1 plan, now late.
-5. **Appearance scoring in verify:** render, then LPIPS, DINOv2, FLIP and edges, plus the nvdiffrast backend. Week 2.
-6. **Texture projection (C) and repair (D).** Week 3.
-7. **Optimise, phone harness, Shopify publish, web app and viewer.** Week 4.
+1. **Run generation on Modal.** `make gen-weights`, `make gen-deploy`, `make gen-smoke`, then one A-and-B job through the API. Done when real A and B meshes, their GPU time and cost, and their silhouette verdicts are recorded here.
+2. **Try real photos.** Run the JPEG path and generation on 2–3 of the owner's own products, including one hard case (glass, shine, or thin parts). Done when the masks, meshes and verdicts are recorded here, good or bad.
+3. **Generated texture for A and B** (Hunyuan3D-Paint, in the same container family). Done when A and B carry textures.
+4. **Appearance scoring in verify:** render, then LPIPS, DINOv2, FLIP and edges, plus the nvdiffrast backend.
+5. **Texture projection (C),** then repair (D).
+6. **Background removal on the GPU** (`onnxruntime-gpu`, weights on the Modal volume), and **view labels in ingest.**
+7. **Optimise, phone harness, Shopify publish, web app and viewer.**
 
 ## Remaining to complete
 
@@ -60,11 +61,12 @@ As of 2026-11-17, day 11 of 4 weeks. "Complete" means the PRD's week-4 milestone
 5. Score A–D on the owner's products.
 6. Optimise, publish, web app and demo.
 
-**Open decision: full PRD or proof layer.** [ADR 0007](adr/0007-verify-any-generator.md) moved the emphasis to proving any generator's model. Finishing as a proof layer would mean checking models from Tripo, Rodin or VersaAI against the owner's photos. That needs only appearance scoring, real photos and a demo: about a week instead of two or more. Not yet decided.
+**Decided 2026-11-17: the full PRD.** The proof layer (checking other generators' models, [ADR 0007](adr/0007-verify-any-generator.md)) stays as a feature, not the finish line. The demo runs in India, inside Hunyuan3D's licensed territory.
 
 ## Open
 
-- **Licences to verify before any public demo:** BiRefNet's training data, Hunyuan3D-2mv's territory terms, TRELLIS.2, nvdiffrast (reportedly non-commercial). See the [licence register](licence-register.md).
+- **Licences to verify before any public demo:** BiRefNet's training data; Hunyuan3D's commercial terms (the India demo is inside its territory); nvdiffrast (reportedly non-commercial). See the [licence register](licence-register.md).
 - **Not yet run on real infrastructure:** Modal (no account run yet), a real S3 bucket, Kaggle.
 - **Ingest still lacks** fetching photos from URLs; photos must be uploaded first.
-- **The schedule:** the plan put shape generation in week 1. It has not started, because verifying other generators' models came first ([ADR 0007](adr/0007-verify-any-generator.md)).
+- **The schedule:** the plan put shape generation in week 1. Its stage and container exist from week 2, but nothing has run on a GPU yet.
+- **Generation's container is checked only on Modal,** not in CI (ADR 0009).

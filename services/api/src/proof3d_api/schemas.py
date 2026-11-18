@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from proof3d_pipeline import ViewLabel
+
 
 class ExternalModel(BaseModel):
     """A model another generator already made, imported to be verified, not regenerated."""
@@ -35,6 +37,13 @@ class ImportRequest(BaseModel):
     title: str | None = None
     category: str | None = None
     config: dict[str, Any] = Field(default_factory=dict, description="PipelineConfig overrides")
+    views: dict[str, ViewLabel] = Field(
+        default_factory=dict,
+        description=(
+            "Which side of the product each photo shows, keyed by photo. Condition B needs "
+            "front, left, back or right labels until ingest labels views itself."
+        ),
+    )
     model: ExternalModel | None = Field(
         default=None, description="Verify this existing model instead of generating one"
     )
@@ -43,6 +52,9 @@ class ImportRequest(BaseModel):
     def _needs_input(self) -> ImportRequest:
         if self.source_url is None and not self.photos:
             raise ValueError("provide a product URL or at least one photo")
+        unlisted = sorted(set(self.views) - set(self.photos))
+        if unlisted:
+            raise ValueError(f"views must label photos listed in photos: {unlisted}")
         if self.model is not None:
             unknown = sorted(set(self.model.held_out) - set(self.photos))
             if unknown:

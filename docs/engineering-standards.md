@@ -73,7 +73,7 @@ Coverage target: 80% or more for `packages/geometry` and `packages/pipeline`. Th
 | Database | Postgres | Jobs, scores, versions and device runs are relational |
 | Queue | Postgres-backed job queue | One less service to run; enough for one GPU |
 | GPU stages | PyTorch; nvdiffrast for rendering and camera fitting | Differentiable rendering is needed for fitting and projection |
-| Models | BiRefNet (masks), Hunyuan3D-2mv (multi-view), TRELLIS.2 (single-photo baseline) | Strong open candidates; licences checked first |
+| Models | BiRefNet (masks), Hunyuan3D-2mv (multi-view), Hunyuan3D-2 (single-photo baseline; TRELLIS.2 deferred, ADR 0005) | Strong open candidates; licences checked first |
 | Metrics | LPIPS, DINOv2, FLIP, silhouette IoU | Perceptual, semantic, pixel and shape coverage |
 | Geometry | trimesh, xatlas, meshoptimizer | Mesh handling, UV unwrapping, simplification and LODs |
 | Packaging | glTF Transform with KTX2 and meshopt compression | Standard web delivery formats |

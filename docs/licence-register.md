@@ -4,8 +4,8 @@ Every model, weight, library and dataset Proof3D depends on, with its licence an
 
 | Component | Used for | Licence (to verify upstream) | Notes and risks | Status |
 |---|---|---|---|---|
-| Hunyuan3D-2mv weights | Condition B shape | Tencent Hunyuan 3D community licence | Check territory exclusions (reported to exclude EU, UK, South Korea) and any user-count limits | to verify |
-| TRELLIS.2 weights | Condition A baseline | Reported MIT | Confirm weights vs code licence separately | to verify |
+| Hunyuan3D-2 and Hunyuan3D-2mv weights (`tencent/Hunyuan3D-2` @ `9cd649b`, `tencent/Hunyuan3D-2mv` @ `3a761b5`) and hy3dgen code (@ `f8db630`) | Conditions A and B shape (ADR 0005) | Tencent Hunyuan 3D 2.0 Community License, released 2025-01-21; LICENSE files read 2026-11-18 | Territory excludes the EU, UK and South Korea; the demo runs in India. Over 1M monthly active users needs Tencent's licence. Outputs must not improve other AI models. hy3dgen's `setup.py` header says "non-commercial", but its LICENSE file is the community licence; ask Tencent before any commercial use | OK for the India demo; commercial use to verify |
+| TRELLIS.2 weights (`microsoft/TRELLIS.2-4B` @ `af44b45`) | Deferred (ADR 0005) | MIT per the model card | Its pipeline loads `briaai/RMBG-2.0` (non-commercial, gated) and Meta's DINOv3 (gated, Meta licence); it depends on nvdiffrast and nvdiffrec | not used |
 | BiRefNet (`birefnet-general-lite`: `BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx`, GitHub release v1, SHA-256 `56000243…3333`) | Background masks (ADR 0008) | MIT per the repository and model card; LICENSE text not yet read at a pinned commit | The general model's training mix (DIS5K, DUTS, HRSOD, UHRSD, HRS10K, P3M-10k, human sets) includes datasets with their own terms, some possibly research-only. Check them before any public demo | to verify |
 | DINOv2 | Feature similarity metric | Reported Apache-2.0 | | to verify |
 | LPIPS | Perceptual metric | Reported BSD-2-Clause | The backbone weights (AlexNet/VGG) have their own terms | to verify |
@@ -24,7 +24,7 @@ Terms of service, not licences, but they govern where photos and outputs go (ADR
 
 | Service | Used for | Check before use | Status |
 |---|---|---|---|
-| Modal | GPU runs: TRELLIS.2, scored eval | Data handling and retention for uploaded inputs; free-plan terms | to verify |
+| Modal | GPU runs: Hunyuan3D generation containers, scored eval | Data handling and retention for uploaded inputs; free-plan terms | to verify |
 | Kaggle notebooks | GPU development runs | Notebook kept private; terms on uploaded data and outputs | to verify |
 | Hosted Postgres (Neon or Supabase) | Shared job database | Free-tier limits; region | to verify |
 | S3-compatible bucket (Cloudflare R2 or similar) | Photos, meshes, renders | Bucket private; key scoped to one bucket | to verify |

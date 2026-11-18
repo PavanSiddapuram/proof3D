@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from proof3d_pipeline.models import Condition
 
 
 class _Cfg(BaseModel):
@@ -23,6 +25,16 @@ class IngestConfig(_Cfg):
     # photos only and rejects the rest, which needs no model.
     segmenter: Literal["birefnet-general-lite"] | None = "birefnet-general-lite"
     mask_threshold: Fraction = Field(default=0.5, description="Product probability cut-off")
+
+
+class GenerateConfig(_Cfg):
+    """Shape generation for conditions A and B (ADR 0005, ADR 0009)."""
+
+    # A uses Hunyuan3D-2 on one photo, B uses Hunyuan3D-2mv on up to four labelled views.
+    backend: Literal["hunyuan3d-2"] = "hunyuan3d-2"
+    steps: int = Field(default=50, ge=5, le=100, description="Diffusion steps")
+    octree_resolution: int = Field(default=380, ge=128, le=512, description="Surface grid")
+    num_chunks: int = Field(default=20_000, ge=1_000, description="Decoder batch size")
 
 
 class CameraFitConfig(_Cfg):
@@ -66,9 +78,34 @@ class PipelineConfig(_Cfg):
     name: str = "default"
     seed: int = 0
     n_input_photos: int | None = Field(default=None, ge=1, description="Fewer-photo study (PRD 6)")
+    # Which evaluation conditions this job builds (PRD 6). C projects real photos onto B's
+    # shape, and D repairs C, so each needs the one before it.
+    conditions: tuple[Condition, ...] = (
+        Condition.A_SINGLE_GENERATED,
+        Condition.B_MULTI_GENERATED,
+        Condition.C_MULTI_PROJECTED,
+        Condition.D_MULTI_PROJECTED_REPAIRED,
+    )
     ingest: IngestConfig = IngestConfig()
+    generate: GenerateConfig = GenerateConfig()
     verify: VerifyConfig = VerifyConfig()
     optimize: OptimizeConfig = OptimizeConfig()
+
+    @model_validator(mode="after")
+    def _conditions_are_buildable(self) -> PipelineConfig:
+        wanted = set(self.conditions)
+        if Condition.EXTERNAL in wanted:
+            raise ValueError("'external' is set by importing a model, not by the config")
+        if not wanted:
+            raise ValueError("conditions must name at least one of A, B, C, D")
+        needs = {
+            Condition.C_MULTI_PROJECTED: Condition.B_MULTI_GENERATED,
+            Condition.D_MULTI_PROJECTED_REPAIRED: Condition.C_MULTI_PROJECTED,
+        }
+        for condition, needed in needs.items():
+            if condition in wanted and needed not in wanted:
+                raise ValueError(f"condition {condition} needs condition {needed}")
+        return self
 
 
 def load_config(path: str | Path) -> PipelineConfig:

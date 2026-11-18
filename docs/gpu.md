@@ -29,7 +29,7 @@ Then create the schema once with `make migrate` (workers and the API never creat
 
 Ingest and verify already work in their CPU form: masks come from photo transparency or from BiRefNet ([ADR 0008](adr/0008-background-removal.md)), and only silhouettes are scored. They need no GPU, so `make worker-gpu-local` runs them on your laptop. BiRefNet on a CPU needs about 6 GB of free RAM and 15 s per photo. On Modal it still runs on the CPU until `onnxruntime-gpu` is added to the image. Modal and Kaggle are needed once generation, rendering and appearance scoring are built.
 
-## 2. Modal: TRELLIS.2 and scored eval runs
+## 2. Modal: the GPU worker and scored eval runs
 
 1. **Sign up and log in.** Sign up at modal.com; the free plan gives $30 of credit a month. Then run:
 
@@ -62,7 +62,29 @@ Ingest and verify already work in their CPU form: masks come from photo transpar
 
 4. **Check spend.** Compare Modal's usage page with the per-stage costs in the job. Modal also bills container start-up and model loading, which no stage records.
 
-## 3. Kaggle: development runs on a T4
+## 3. Shape generation on Modal (ADR 0009)
+
+The generation models run in their own container, which `generate_shape` calls. Set it up once, after `modal setup`:
+
+```bash
+make gen-weights    # download the pinned Hunyuan3D-2 and -2mv weights into the proof3d-weights volume
+make gen-deploy     # deploy the container (app proof3d-gen-hunyuan3d)
+make gen-smoke ARGS="--front front.png --left left.png --back back.png"   # your own cut-out PNGs
+```
+
+`gen-smoke` writes `.data/gen/A.glb` and `.data/gen/B.glb`, and prints the GPU time of each call. The container's GPU is `PROOF3D_GEN_GPU` (default `L4`). Set `PROOF3D_GEN_GPU_USD_PER_HOUR` to its list price, so the stage records a cost.
+
+A job builds A and B when it is imported with view labels:
+
+```json
+{"photos": [".../front.jpg", ".../left.jpg", ".../back.jpg", ".../top.jpg"],
+ "views": {".../front.jpg": "front", ".../left.jpg": "left", ".../back.jpg": "back"},
+ "config": {"conditions": ["A", "B"]}}
+```
+
+Ingest holds the last photo by name out (here `top.jpg`), and it is never sent to the generator. Leave C and D out of `conditions` until texture projection is built, so the job goes on to verify.
+
+## 4. Kaggle: development runs on a T4
 
 1. **Notebook settings:**
    - **Accelerator:** GPU T4. Not the P100: the locked torch is a CUDA 13 build, and CUDA 13 dropped Pascal cards.

@@ -6,8 +6,8 @@ need no model. Any other photo goes through background removal (BiRefNet, ``segm
 loaded only when a photo needs it. ``ingest.segmenter: null`` in the config turns it off and
 rejects such photos instead. Not built yet, and what stands in:
 
-* view labels (orientation model or VLM): photos get none, so camera fitting searches the
-  whole orbit;
+* view labels (orientation model or VLM): only labels given on import (``views``) exist,
+  and camera fitting does not use them yet, so it searches the whole orbit;
 * fetching photos from a URL: photos must be uploaded (``POST /uploads``) first.
 
 Roles given at import (an imported model's held-out photos) are kept. Otherwise one usable
@@ -232,6 +232,7 @@ def ingest(ctx: StageContext, load: Callable[[str], Segmenter] = load_segmenter)
             "rejected": rejected,
             "warnings": warnings,
             "masks_from": masks_from,
-            "view_labels": "none yet: camera fitting searches the whole orbit",
+            # Given on import for now; automatic labelling is not built yet.
+            "view_labels": {photo_name(p): p.view_label for p in photos if p.view_label},
         },
     )

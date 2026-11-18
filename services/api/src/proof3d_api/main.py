@@ -116,6 +116,7 @@ def create_app(
         product.photos = [
             Photo(
                 source=src,
+                view_label=req.views[src].value if src in req.views else None,
                 # Only the importer knows which photos the generator saw, so roles are set
                 # here; ingest keeps them and only adds masks, labels and quality flags.
                 role=(PhotoRole.HELD_OUT if src in held_out else PhotoRole.INPUT).value
@@ -130,12 +131,16 @@ def create_app(
             config=cfg.model_dump(mode="json"),
             config_hash=config_hash(cfg),
         )
-        # An imported model is verified as it is: no generation, retexturing or repair.
-        skip = (
-            {StageName.GENERATE_SHAPE, StageName.PROJECT_TEXTURE, StageName.REPAIR}
-            if external
-            else set()
-        )
+        # An imported model is verified as it is: no generation, retexturing or repair. A job
+        # of our own skips the stages of conditions its config leaves out.
+        skip: set[StageName] = set()
+        if external:
+            skip = {StageName.GENERATE_SHAPE, StageName.PROJECT_TEXTURE, StageName.REPAIR}
+        else:
+            if Condition.C_MULTI_PROJECTED not in cfg.conditions:
+                skip.add(StageName.PROJECT_TEXTURE)
+            if Condition.D_MULTI_PROJECTED_REPAIRED not in cfg.conditions:
+                skip.add(StageName.REPAIR)
         queue.create_stage_runs(job, skip=skip)
         session.add_all([product, job])
         session.flush()

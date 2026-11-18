@@ -2,9 +2,14 @@
 # in code (standards 3, rule 2). Unknown keys are rejected.
 name: default
 seed: 0
+conditions: [A, B, C, D]  # C needs B; D needs C
 ingest:
   segmenter: birefnet-general-lite  # null: accept background-removed photos only
   mask_threshold: 0.5
+generate:
+  backend: hunyuan3d-2  # A: Hunyuan3D-2 (one photo); B: Hunyuan3D-2mv (up to 4 views)
+  steps: 50
+  octree_resolution: 380
 verify:
   camera_fit:
     resolution: 128
