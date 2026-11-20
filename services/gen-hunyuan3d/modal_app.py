@@ -41,7 +41,14 @@ MULTI = {
 }
 WEIGHTS_DIR = "/weights"  # HY3DGEN_MODELS: hy3dgen loads {dir}/{repo}/{subfolder} if it exists
 GPU = os.environ.get("PROOF3D_GEN_GPU", "L4")  # 24 GB; shape generation needs ~6 GB per model
+# "cpu" runs on Modal CPUs in float32: slow, but it needs no payment method on the account.
+ON_CPU = GPU.lower() == "cpu"
+CPU_CORES = int(os.environ.get("PROOF3D_GEN_CPU_CORES", "16"))
 MAX_FACES = 200_000  # after hy3dgen's own clean-up; optimise makes the phone LODs
+# Our view label -> Hunyuan3D-2mv's slot. Its left and right are mirrored against ours (left
+# is azimuth +90 in proof3d_geometry.views). Measured 2026-11-18 on the synthetic tripod: with
+# our left photo in its left slot, B's held-out top IoU was 0.837; in its right slot, 0.901.
+MV_SLOT = {"front": "front", "left": "right", "back": "back", "right": "left"}
 
 weights = modal.Volume.from_name("proof3d-weights", create_if_missing=True)
 
@@ -68,6 +75,9 @@ image = (
         "pygltflib==1.16.3",
         "tqdm==4.67.1",
         "pillow==11.1.0",
+        # Imported by hy3dgen.shapegen but not in its requirements (marching cubes, configs).
+        "scikit-image==0.24.0",
+        "PyYAML==6.0.2",
     )
     # --no-deps: setup.py also pulls in gradio, rembg and onnxruntime, which shape generation
     # does not use.
@@ -75,7 +85,12 @@ image = (
         f"git+https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git@{HY3DGEN_COMMIT}",
         extra_options="--no-deps",
     )
+    # Fail the build, not every container start, if --no-deps left an import out.
+    .run_commands("python -c 'import hy3dgen.shapegen'")
     .env({"HY3DGEN_MODELS": WEIGHTS_DIR, "HF_HUB_DISABLE_TELEMETRY": "1"})
+    # The container re-imports this file, so it must see the same settings as the machine
+    # that deployed it; otherwise a CPU container would load the models onto CUDA.
+    .env({"PROOF3D_GEN_GPU": GPU, "PROOF3D_GEN_CPU_CORES": str(CPU_CORES)})
 )
 
 app = modal.App("proof3d-gen-hunyuan3d", image=image)
@@ -100,7 +115,14 @@ def download_weights() -> list[str]:
     return sorted(got)
 
 
-@app.cls(gpu=GPU, volumes={WEIGHTS_DIR: weights}, timeout=20 * 60, scaledown_window=120)
+@app.cls(
+    gpu=None if ON_CPU else GPU,
+    cpu=CPU_CORES if ON_CPU else None,
+    memory=32 * 1024 if ON_CPU else None,  # both pipelines in float32 take ~14 GB
+    volumes={WEIGHTS_DIR: weights},
+    timeout=(90 if ON_CPU else 20) * 60,
+    scaledown_window=120,
+)
 class Hunyuan3D:
     @modal.enter()
     def load(self) -> None:
@@ -116,17 +138,19 @@ class Hunyuan3D:
                 subfolder=spec["subfolder"],
                 variant="fp16",
                 use_safetensors=True,
-                device="cuda",
+                device="cpu" if ON_CPU else "cuda",
+                dtype=torch.float32 if ON_CPU else torch.float16,
             )
             for name, spec in (("single", SINGLE), ("multi", MULTI))
         }
-        self.gpu = torch.cuda.get_device_name(0)
+        self.gpu = f"CPU x{CPU_CORES}" if ON_CPU else torch.cuda.get_device_name(0)
 
     def _run(self, name: str, image: Any, seed: int, cfg: dict[str, Any]) -> dict[str, Any]:
         import torch
         from hy3dgen.shapegen import DegenerateFaceRemover, FaceReducer, FloaterRemover
 
-        torch.cuda.synchronize()
+        if not ON_CPU:
+            torch.cuda.synchronize()
         start = time.perf_counter()
         mesh = self.pipelines[name](
             image=image,
@@ -139,7 +163,8 @@ class Hunyuan3D:
         mesh = FloaterRemover()(mesh)
         mesh = DegenerateFaceRemover()(mesh)
         mesh = FaceReducer()(mesh, max_facenum=MAX_FACES)
-        torch.cuda.synchronize()
+        if not ON_CPU:
+            torch.cuda.synchronize()
         spec = SINGLE if name == "single" else MULTI
         return {
             "glb": mesh.export(file_type="glb"),
@@ -163,28 +188,36 @@ class Hunyuan3D:
         unknown = set(views) - {"front", "left", "back", "right"}
         if unknown:
             raise ValueError(f"Hunyuan3D-2mv takes front, left, back and right, not {unknown}")
-        images = {v: Image.open(io.BytesIO(b)).convert("RGBA") for v, b in views.items()}
+        images = {MV_SLOT[v]: Image.open(io.BytesIO(b)).convert("RGBA") for v, b in views.items()}
         return self._run("multi", images, seed, cfg)
 
 
 @app.local_entrypoint()
 def smoke(
-    front: str, left: str = "", back: str = "", right: str = "", seed: int = 0, steps: int = 30
+    front: str,
+    left: str = "",
+    back: str = "",
+    right: str = "",
+    seed: int = 0,
+    steps: int = 30,
+    octree: int = 380,
+    only_b: bool = False,
+    out: str = ".data/gen",
 ) -> None:
     """One single-photo and one multi-view call on your own cut-out PNGs."""
-    out = Path(".data/gen")
-    out.mkdir(parents=True, exist_ok=True)
-    cfg = {"steps": steps, "octree_resolution": 380, "num_chunks": 20_000}
+    out_dir = Path(out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cfg = {"steps": steps, "octree_resolution": octree, "num_chunks": 20_000}
     views = {
         v: Path(p).read_bytes()
         for v, p in {"front": front, "left": left, "back": back, "right": right}.items()
         if p
     }
     model = Hunyuan3D()
-    runs = [("A", model.single.remote(views["front"], seed, cfg))]
+    runs = [] if only_b else [("A", model.single.remote(views["front"], seed, cfg))]
     if len(views) > 1:
         runs.append(("B", model.multi.remote(views, seed, cfg)))
     for condition, result in runs:
-        path = out / f"{condition}.glb"
+        path = out_dir / f"{condition}.glb"
         path.write_bytes(result["glb"])
         print(f"{condition}: {path} ({result['gpu_s']:.1f} s on {result['gpu']})")

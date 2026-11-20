@@ -13,6 +13,7 @@ All numbers here come from **synthetic** products (`proof3d_geometry.synthetic`)
 | 2026-11-13 | `4a41928` | Verify a model from any generator: model import, surface evidence, next-photo suggestions, CPU check CLI ([ADR 0007](adr/0007-verify-any-generator.md)) | Wrong-depth model: held-out IoU 0.52 and 0.77, flagged; correct model ≥ 0.98 |
 | 2026-11-13 | `2c74e64` | Example database URL uses 127.0.0.1 (on Windows, `localhost` hangs against Docker) | — |
 | 2026-11-13 | `776f5f4` | End to end through the API, queue and Postgres: `POST /uploads`, Alembic migrations, ingest and verify in their CPU forms, scorecard verdict and evidence, demo script; stage memory metering made ~3× cheaper | 126 tests, 98% coverage; demo on Postgres 16.4: correct model `silhouette_agrees` (held-out 0.963, 0.994), wrong model `disagrees` (0.552, 0.674) |
+| 2026-11-18 | *uncommitted* | Generation runs on Modal's free tier, on CPU (`PROOF3D_GEN_GPU=cpu`): Modal refuses GPUs on an account without a payment method. Fixed two container bugs found on the first real runs: scikit-image missing, and the CPU setting not reaching the container ([gpu.md 3](gpu.md#3-shape-generation-on-modal-adr-0009)) | First real Hunyuan3D meshes, synthetic tripod, 10 steps, grid 256, 16 cores. Through the API, queue and Postgres: A (1 photo) held-out top IoU **0.738**, B (3 photos) **0.837**, both `disagrees`; the true shape scores 0.996. Compute 977 s (A) and 1741 s (B), about $0.76 at an estimated $1.01 per hour. Both meshes are one watertight piece, ~115k triangles. **Hunyuan3D-2mv's left and right slots are mirrored against our labels:** with them swapped, B's held-out top IoU rose to **0.901**, with no held-out disagreement (left input 0.79 to 0.88). The container now swaps them ([ADR 0005](adr/0005-generation-models.md)). The swapped run was a smoke call, not yet a job through the API |
 | 2026-11-18 | `e288a99` | Shape generation for A (Hunyuan3D-2) and B (Hunyuan3D-2mv): the `generate_shape` stage, view labels on import, `conditions` in the config, and a pinned Modal container ([ADR 0005](adr/0005-generation-models.md), [ADR 0009](adr/0009-generation-containers.md)). TRELLIS.2 deferred over gated and non-commercial dependencies | Stage tested end to end with a stand-in generator: the wrong-depth A `disagrees` and the correct B `silhouette_agrees`. The container loads locally; **not yet run on Modal** |
 | 2026-11-16 | `90cd33c` | Background removal: BiRefNet (small model) through ONNX Runtime, pinned by SHA-256, used only for photos without transparency ([ADR 0008](adr/0008-background-removal.md)) | Real model on synthetic tabletop JPEGs: mask IoU 0.990–0.999. JPEG demo on Postgres: correct model `silhouette_agrees` (0.941, 0.986), wrong model `disagrees` (0.547, 0.663). CPU: ~17 s load, 13–19 s and ~6 GB RAM per photo |
 
@@ -20,7 +21,7 @@ All numbers here come from **synthetic** products (`proof3d_geometry.synthetic`)
 
 In order. Each line names what "done" means.
 
-1. **Run generation on Modal.** `make gen-weights`, `make gen-deploy`, `make gen-smoke`, then one A-and-B job through the API. Done when real A and B meshes, their GPU time and cost, and their silhouette verdicts are recorded here.
+1. **Make a running stage visible.** The queue claims, runs and completes a stage in one transaction, so a 45-minute generation shows as `queued`, with 0 attempts, until it ends. It also holds a transaction open that long, which hosted Postgres may end. Done when the claim commits first, and a stale `running` stage is requeued.
 2. **Try real photos.** Run the JPEG path and generation on 2–3 of the owner's own products, including one hard case (glass, shine, or thin parts). Done when the masks, meshes and verdicts are recorded here, good or bad.
 3. **Generated texture for A and B** (Hunyuan3D-Paint, in the same container family). Done when A and B carry textures.
 4. **Appearance scoring in verify:** render, then LPIPS, DINOv2, FLIP and edges, plus the nvdiffrast backend.
@@ -36,7 +37,7 @@ As of 2026-11-17, day 11 of 4 weeks. "Complete" means the PRD's week-4 milestone
 
 | Goal | Built | Missing |
 |---|---|---|
-| **G1.** Build 3D from photos; measure it against a held-out photo | Camera fitting, held-out silhouette scores, surface evidence, background removal | Shape generation A (TRELLIS.2) and B (Hunyuan3D-2mv); appearance scoring (render, LPIPS, DINOv2, FLIP, edges); view labels; leave-one-out scoring |
+| **G1.** Build 3D from photos; measure it against a held-out photo | Camera fitting, held-out silhouette scores, surface evidence, background removal, shape generation A (Hunyuan3D-2) and B (Hunyuan3D-2mv) on Modal | Generated texture for A and B; appearance scoring (render, LPIPS, DINOv2, FLIP, edges); view labels in ingest; leave-one-out scoring; generation at full settings (needs a GPU) |
 | **G2.** Show with numbers that multiple photos beat one | Eval configs for the fewer-photo study | About 20 products photographed by the owner (8 angles each); conditions A–D scored; fewer-photo study; blind human rating of 50 renders |
 | **G3.** Fix failing regions without regenerating | Failure regions from face-ID and error maps | Texture projection from real photos (C); repair rungs 1–2 (D) |
 | **G4.** Smooth on budget Android phones | — | Optimise (LODs, compression); phone harness; tests on real phones |
@@ -46,7 +47,7 @@ As of 2026-11-17, day 11 of 4 weeks. "Complete" means the PRD's week-4 milestone
 
 1. **Product photos:** about 20 own products, 8 angles each, in a demo Shopify store. Every number so far is synthetic.
 2. **Accounts:**
-   - Modal, for the GPU;
+   - Modal: the account works, but GPUs need a payment method on it. Without one, generation runs on CPU at reduced settings (about 45 minutes and $0.76 per product for A and B);
    - hosted Postgres and an R2 bucket, so a cloud worker can reach the data;
    - a demo Shopify store, with an access token limited to the smallest scopes needed.
 3. **Licence decisions** before any public demo (see Open).
@@ -66,7 +67,8 @@ As of 2026-11-17, day 11 of 4 weeks. "Complete" means the PRD's week-4 milestone
 ## Open
 
 - **Licences to verify before any public demo:** BiRefNet's training data; Hunyuan3D's commercial terms (the India demo is inside its territory); nvdiffrast (reportedly non-commercial). See the [licence register](licence-register.md).
-- **Not yet run on real infrastructure:** Modal (no account run yet), a real S3 bucket, Kaggle.
+- **Not yet run on real infrastructure:** a real S3 bucket, Kaggle, and a Modal GPU. Modal itself has run generation on CPU.
+- **Generation on CPU is a reduced setting.** 10 steps and grid 256, against the defaults of 50 and 380. Results made this way must say so; the provenance on each asset records it. At these settings, 20 products would take about 16 hours and roughly $15 of the $30 monthly credit. That price is my estimate from Modal's list rates, so check it on the usage page.
 - **Ingest still lacks** fetching photos from URLs; photos must be uploaded first.
-- **The schedule:** the plan put shape generation in week 1. Its stage and container exist from week 2, but nothing has run on a GPU yet.
+- **The schedule:** the plan put shape generation in week 1. It first ran on 2026-11-18 (week 2), on CPU.
 - **Generation's container is checked only on Modal,** not in CI (ADR 0009).

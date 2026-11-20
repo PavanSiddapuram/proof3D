@@ -72,7 +72,24 @@ make gen-deploy     # deploy the container (app proof3d-gen-hunyuan3d)
 make gen-smoke ARGS="--front front.png --left left.png --back back.png"   # your own cut-out PNGs
 ```
 
-`gen-smoke` writes `.data/gen/A.glb` and `.data/gen/B.glb`, and prints the GPU time of each call. The container's GPU is `PROOF3D_GEN_GPU` (default `L4`). Set `PROOF3D_GEN_GPU_USD_PER_HOUR` to its list price, so the stage records a cost.
+`gen-smoke` writes `.data/gen/A.glb` and `.data/gen/B.glb`, and prints the GPU time of each call. The container's GPU is `PROOF3D_GEN_GPU` (default `L4`). Set `PROOF3D_GEN_GPU_USD_PER_HOUR` to its list price, so the stage records a cost. `gen-smoke` also takes `--steps`, `--octree` (surface grid), `--only-b` and `--out` (output folder). Views use our labels; the container maps them to Hunyuan3D-2mv's mirrored left and right slots (ADR 0005).
+
+**Without a payment method on the Modal account,** GPU functions are refused ("Please add a payment method to use L4 GPU functions"; T4 too). The free credit still runs CPU containers. Set `PROOF3D_GEN_GPU=cpu` for every `gen-*` command, `gen-deploy` included:
+
+```bash
+PROOF3D_GEN_GPU=cpu make gen-weights
+PROOF3D_GEN_GPU=cpu make gen-deploy
+PROOF3D_GEN_GPU=cpu make gen-smoke ARGS="--front front.png --left left.png --back back.png --steps 10 --octree 256"
+```
+
+The models then run in float32 on `PROOF3D_GEN_CPU_CORES` cores (default 16), with 32 GB of memory. The setting is built into the image, because the container re-imports `modal_app.py` and would otherwise load onto CUDA. Measured on 2026-11-18 with 16 cores, 10 steps and grid 256:
+
+| | Sampling | Surface decoding | Whole call |
+|---|---|---|---|
+| A (1 photo) | 30 s per step | 14.7 min | 19.9 min |
+| B (3 photos) | 61 s per step | 15.1 min | 25.6 min |
+
+Decoding grows with the cube of the grid. At the defaults (50 steps, grid 380), expect about 1.2 hours for A and 1.7 hours for B, too slow for the eval. Use 10 steps and grid 256 in the job's `generate` config on CPU, and record that the meshes were made that way.
 
 A job builds A and B when it is imported with view labels:
 
